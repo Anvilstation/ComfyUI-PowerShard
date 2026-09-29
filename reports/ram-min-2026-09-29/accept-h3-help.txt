@@ -1,0 +1,38 @@
+usage: accept_h3.py [-h] --comfy COMFY --checkpoint CHECKPOINT
+                    [--profile PROFILE] [--gpus GPUS]
+                    [--precision {fp16,int8_fp16}]
+                    [--backend {fsdp2,fsdp2_sequence}] [--output OUTPUT]
+                    [--lifecycle] [--cpu-offload | --no-cpu-offload]
+                    [--pin-memory | --no-pin-memory]
+                    [--prefetch-blocks {0,1,2}]
+                    [--numa-policy {none,auto,bind}]
+                    [--fp16-safe | --no-fp16-safe] [--debug-finite]
+                    [--text-magnitude TEXT_MAGNITUDE]
+                    [--attention-backend {auto,sdpa,flash_attn,vllm_flash_attn,sageattention,math}]
+                    [--allow-fallback | --no-allow-fallback]
+                    [--memory-profile {custom,ram_min}]
+                    [--workspace-mib WORKSPACE_MIB]
+                    [--stage-cache-mib STAGE_CACHE_MIB]
+
+options:
+  -h, --help            show this help message and exit
+  --comfy COMFY
+  --checkpoint CHECKPOINT
+  --profile PROFILE
+  --gpus GPUS
+  --precision {fp16,int8_fp16}
+  --backend {fsdp2,fsdp2_sequence}
+  --output OUTPUT
+  --lifecycle
+  --cpu-offload, --no-cpu-offload
+  --pin-memory, --no-pin-memory
+  --prefetch-blocks {0,1,2}
+  --numa-policy {none,auto,bind}
+  --fp16-safe, --no-fp16-safe
+  --debug-finite
+  --text-magnitude TEXT_MAGNITUDE
+  --attention-backend {auto,sdpa,flash_attn,vllm_flash_attn,sageattention,math}
+  --allow-fallback, --no-allow-fallback
+  --memory-profile {custom,ram_min}
+  --workspace-mib WORKSPACE_MIB
+  --stage-cache-mib STAGE_CACHE_MIB

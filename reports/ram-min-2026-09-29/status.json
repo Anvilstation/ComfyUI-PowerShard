@@ -1,0 +1,68 @@
+{
+  "release": "0.5.0rc1",
+  "date": "2026-09-29",
+  "base_commit": "bb75376",
+  "environment": {
+    "cpu": "x86_64",
+    "python": "3.11.16",
+    "torch": "2.12.0+cpu",
+    "comfy_commit": "7a0b5eede3f9721c8faab290689893f36edc6d66",
+    "gpu": []
+  },
+  "tests": {
+    "main": {
+      "status": "PASS",
+      "passed": 241,
+      "failed": 0,
+      "duration_s": 101.93
+    },
+    "audit_regressions": {
+      "status": "PASS",
+      "passed": 58,
+      "failed": 0,
+      "duration_s": 35.64
+    },
+    "benchmark_cli": {
+      "status": "PASS",
+      "passed": 1,
+      "failed": 0,
+      "duration_s": 6.8
+    }
+  },
+  "hardware": {
+    "AC922_RAM_FSDP_CPUOffload": {
+      "status": "NOT_RUN_ON_AC922",
+      "reason": "Нет CUDA GPU/POWER9, nvcc и реальных pretrained checkpoints в доступной среде"
+    },
+    "AC922_vllm_wheel": {
+      "status": "NOT_RUN_ON_AC922",
+      "reason": "Нет CUDA GPU/POWER9, nvcc и реальных pretrained checkpoints в доступной среде"
+    },
+    "AC922_ATS_kernel": {
+      "status": "NOT_RUN_ON_AC922",
+      "reason": "Нет CUDA GPU/POWER9, nvcc и реальных pretrained checkpoints в доступной среде"
+    },
+    "H3_full_generation": {
+      "status": "NOT_RUN",
+      "reason": "Нет CUDA GPU/POWER9, nvcc и реальных pretrained checkpoints в доступной среде"
+    },
+    "Qwen32B_full_generation": {
+      "status": "NOT_RUN",
+      "reason": "Нет CUDA GPU/POWER9, nvcc и реальных pretrained checkpoints в доступной среде"
+    },
+    "VRAM_CPU_PSS_per_rank": {
+      "status": "NOT_RUN",
+      "reason": "Нет CUDA GPU/POWER9, nvcc и реальных pretrained checkpoints в доступной среде"
+    },
+    "native_ComfyUI_browser": {
+      "status": "NOT_RUN",
+      "reason": "Нет работающего ComfyUI frontend/browser; проверен JS DOM harness"
+    }
+  },
+  "claims": {
+    "ats_model_allocator": false,
+    "measured_vram_saving": null,
+    "measured_speedup": null,
+    "CPU_tests_are_not_CUDA_evidence": true
+  }
+}

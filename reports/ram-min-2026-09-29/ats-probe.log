@@ -1,0 +1,7 @@
+{
+  "status": "NOT_RUN",
+  "probe": "direct_system_malloc_and_cudaMallocManaged",
+  "results": [],
+  "application_allocator": "UNCHANGED; PowerShard uses CPUOffloadPolicy",
+  "reason": "Нет выбранных доступных CUDA GPU"
+}
