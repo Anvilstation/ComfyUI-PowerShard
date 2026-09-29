@@ -1,0 +1,401 @@
+{
+  "_id": "6a6bd1dc7034404148ec9107",
+  "id": "Comfy-Org/MiniMax-H3",
+  "private": false,
+  "library_name": "diffusion-single-file",
+  "tags": [
+    "diffusion-single-file",
+    "comfyui",
+    "base_model:MiniMaxAI/MiniMax-H3",
+    "base_model:finetune:MiniMaxAI/MiniMax-H3",
+    "license:other",
+    "region:us"
+  ],
+  "downloads": 19450489,
+  "likes": 1838,
+  "modelId": "Comfy-Org/MiniMax-H3",
+  "author": "Comfy-Org",
+  "sha": "a98869194787969724c7425d95d0ed73ce9202af",
+  "lastModified": "2026-09-06T16:55:14.000Z",
+  "gated": false,
+  "disabled": false,
+  "model-index": null,
+  "config": {},
+  "cardData": {
+    "license": "other",
+    "license_name": "minimax-h3-community-license-agreement",
+    "license_link": "https://huggingface.co/MiniMaxAI/MiniMax-H3/blob/main/LICENSE",
+    "tags": [
+      "comfyui",
+      "diffusion-single-file"
+    ],
+    "base_model": [
+      "MiniMaxAI/MiniMax-H3"
+    ]
+  },
+  "siblings": [
+    {
+      "rfilename": ".gitattributes",
+      "blobId": "a6344aac8c09253b3b630fb776ae94478aa0275b",
+      "size": 1519
+    },
+    {
+      "rfilename": "README.md",
+      "blobId": "f6f559001f290a7495d4cb424067a4f57e100a63",
+      "size": 3843
+    },
+    {
+      "rfilename": "diffusion_models/minimax_h3_fl2va_bf16.safetensors",
+      "blobId": "d09c38a854fe071c3261b0baf139c2829e81dbeb",
+      "size": 66280487368,
+      "lfs": {
+        "sha256": "907d4add438438ec1544f5240c3b38532ed934fe6be75677a6bbda2a6fdd6182",
+        "size": 66280487368,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "diffusion_models/minimax_h3_fl2va_int8_convrot.safetensors",
+      "blobId": "886b100d3f46051e9a0d7e99c192428627e2dda2",
+      "size": 34038892334,
+      "lfs": {
+        "sha256": "7ad4c73e6e378b822ffd1629f27f632d3787d95f5e468e3af958f98c58df96a5",
+        "size": 34038892334,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "diffusion_models/minimax_h3_fl2va_pruned_bf16.safetensors",
+      "blobId": "c3ee4ab26ecbc2df640025689225427ee0c160bf",
+      "size": 40225724176,
+      "lfs": {
+        "sha256": "a32572fb90b5508b201ec7c2eddcc184b13ddfd3c6f6d2cf06a0b46535d541b4",
+        "size": 40225724176,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "diffusion_models/minimax_h3_fl2va_pruned_fp8_scaled.safetensors",
+      "blobId": "483e4ccdf5a8ea7a8d5278541874120c94be1ba3",
+      "size": 20958205608,
+      "lfs": {
+        "sha256": "12944c1f7791637e7de12208aef04da82bd26b95271b1b47d817364315ade993",
+        "size": 20958205608,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+      "blobId": "552dd33920a833fa613c73f0ca2335bb6ff0e4d1",
+      "size": 20970379616,
+      "lfs": {
+        "sha256": "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a",
+        "size": 20970379616,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "diffusion_models/minimax_h3_ref2va_bf16.safetensors",
+      "blobId": "2d2b9b58f07bd6d783bf11b30d6fe5538bfa2eef",
+      "size": 66280487368,
+      "lfs": {
+        "sha256": "e32c54c1a7b4f5f397f195cea267ccb18806303bb665678c4bee60953bdf3026",
+        "size": 66280487368,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "diffusion_models/minimax_h3_ref2va_int8_convrot.safetensors",
+      "blobId": "5469849009740241d79c12dddbf1cee1116b1573",
+      "size": 34038894550,
+      "lfs": {
+        "sha256": "9eef934046a0671bc8a5daf87100705e1478419c574cfde70c50fbe6885f76a9",
+        "size": 34038894550,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "diffusion_models/minimax_h3_ref2va_pruned_bf16.safetensors",
+      "blobId": "344814907052df784fb60ff1508ad82ef97a59a5",
+      "size": 40225724176,
+      "lfs": {
+        "sha256": "37c0da793e20ca735272ec2be655f08a2e10f97a3ec8fdfb40f5b39a736ed6fe",
+        "size": 40225724176,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "diffusion_models/minimax_h3_ref2va_pruned_fp8_scaled.safetensors",
+      "blobId": "62f4ccb3d9363adf42d633d3745e4c0ca8fbf6ec",
+      "size": 20958205608,
+      "lfs": {
+        "sha256": "f86f2f79ebd2d76eb8eeb46091e83982e6ff51d255747e7b16e92834b392b8e9",
+        "size": 20958205608,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+      "blobId": "7d456c7b17fc9ba27722ddc4971bfb6e46bf831a",
+      "size": 20970379616,
+      "lfs": {
+        "sha256": "9255f52b6677845ad238f20dfaafa94727053694127ab7f255c048f0f9365779",
+        "size": 20970379616,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "embeddings/minimaxh3_art_is_explosion.safetensors",
+      "blobId": "4d92c617801678d53480f1fa8de4e8fe8edf7d8f",
+      "size": 512120,
+      "lfs": {
+        "sha256": "00e8679c77ce1fc3fd3accb67bc4db56d626b6b27609797504ab00e2b997145f",
+        "size": 512120,
+        "pointerSize": 131
+      }
+    },
+    {
+      "rfilename": "embeddings/minimaxh3_blooming_flowers.safetensors",
+      "blobId": "700f6a601dedf854602a766ca3365d6f1b02565b",
+      "size": 1259640,
+      "lfs": {
+        "sha256": "934d1d2c50bf27cd0b3785b0f44b0b62119a90b2901f9193782d86ff7191cbe9",
+        "size": 1259640,
+        "pointerSize": 132
+      }
+    },
+    {
+      "rfilename": "embeddings/minimaxh3_bullet_time.safetensors",
+      "blobId": "56630d96198fa14795f92097049ea764c2519528",
+      "size": 962680,
+      "lfs": {
+        "sha256": "e318b200d28c22fcf41d9b25ce481dd5a766f0ac50561663e33401975ea1bcae",
+        "size": 962680,
+        "pointerSize": 131
+      }
+    },
+    {
+      "rfilename": "embeddings/minimaxh3_dark_magic.safetensors",
+      "blobId": "4834dfed44c541e23267a741931c6351ecd627bc",
+      "size": 604280,
+      "lfs": {
+        "sha256": "71df9fe76f9cbb34a7508fc49d46bf35ee51744aaa17789c6406e1bec49f5866",
+        "size": 604280,
+        "pointerSize": 131
+      }
+    },
+    {
+      "rfilename": "embeddings/minimaxh3_fire_breath.safetensors",
+      "blobId": "3f6346e1e22270a2248a28664b8e89120a046b20",
+      "size": 1208440,
+      "lfs": {
+        "sha256": "ed048cf52802774a819e916bbf6ad6eaa047027abc6cd0decc63daccbb93c9f1",
+        "size": 1208440,
+        "pointerSize": 132
+      }
+    },
+    {
+      "rfilename": "embeddings/minimaxh3_four_seasons.safetensors",
+      "blobId": "42dae47cb9959aa15df2d9e0fc5d64181890506b",
+      "size": 1454200,
+      "lfs": {
+        "sha256": "9a432e89afc942d1ea27055372a6fb81c4dc0f4c0498a49b9f5eff1a015f1034",
+        "size": 1454200,
+        "pointerSize": 132
+      }
+    },
+    {
+      "rfilename": "embeddings/minimaxh3_kiss_camera.safetensors",
+      "blobId": "d957d2bb995e7017f35bd5970449f32fdf960c93",
+      "size": 993400,
+      "lfs": {
+        "sha256": "9da82f56c26f2a81b80803a31486d31036c122112203b62d4991759a90ddf4b8",
+        "size": 993400,
+        "pointerSize": 131
+      }
+    },
+    {
+      "rfilename": "embeddings/minimaxh3_spiral_ascent.safetensors",
+      "blobId": "927d0268a44aaa65bc494cb7ea91844bfb9c6661",
+      "size": 1341560,
+      "lfs": {
+        "sha256": "767b6bdccee4c41805802a07bf3c04ba9582fbb8e7bc4bd416ff8e000e3e29b9",
+        "size": 1341560,
+        "pointerSize": 132
+      }
+    },
+    {
+      "rfilename": "embeddings/minimaxh3_storm_magic.safetensors",
+      "blobId": "647347d0c0fd6dba079bf1d544c3310b57d90580",
+      "size": 1403000,
+      "lfs": {
+        "sha256": "5047cd4499207ef20d62872c7153a476e216e7edabd12b595802f567666d7425",
+        "size": 1403000,
+        "pointerSize": 132
+      }
+    },
+    {
+      "rfilename": "embeddings/minimaxh3_truman_show.safetensors",
+      "blobId": "f4aff1f7e53037ef4d8d436506ae1b7392564cc1",
+      "size": 921720,
+      "lfs": {
+        "sha256": "3830e6ab9d7b95965f5497a6691bd92e33f8bf7a62bafb7b2331b268ff98aa00",
+        "size": 921720,
+        "pointerSize": 131
+      }
+    },
+    {
+      "rfilename": "loras/minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors",
+      "blobId": "7aa23a8ccbb6d79e8d861439fe82801c5cf1096f",
+      "size": 1956192992,
+      "lfs": {
+        "sha256": "c396a9a06f58399e9df9754b18299818d84a2ddd371724ba48fe4a41221437dc",
+        "size": 1956192992,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "loras/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
+      "blobId": "9bc880321fcbed8375b4951e8caf696cac4390c7",
+      "size": 1956193000,
+      "lfs": {
+        "sha256": "2339acdf19bfe123f46b971ea35d367a84adb85de43627e1eceafa5a5b2b111e",
+        "size": 1956193000,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "loras/minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors",
+      "blobId": "a3eb4468b7576e53eaa091725397a0789de96d5a",
+      "size": 1956193000,
+      "lfs": {
+        "sha256": "5b9ab5ade15d0775676d01a907268a69a1468dc6033b3b0d3ded5502f3ebb84c",
+        "size": 1956193000,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "model_patches/minimax_h3_fun_controlnet_union_pruned_bf16.safetensors",
+      "blobId": "edf8b5e97566b1f7702f2802f840e6a644c9d7d2",
+      "size": 4222169456,
+      "lfs": {
+        "sha256": "57fe1e64928a63a55e3cd4586b55cd5d0eb4980648b6f31e5d9dac16fe7f1c48",
+        "size": 4222169456,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "model_patches/minimax_h3_fun_controlnet_union_pruned_int8_convrot.safetensors",
+      "blobId": "128a55d59bdf25ca628181d17df074fd116db3db",
+      "size": 2296635360,
+      "lfs": {
+        "sha256": "9c645c0a308c8af361efd43b409710f6f8fec0db297c29503e141a84991fed0c",
+        "size": 2296635360,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "text_encoders/qwen3vl_32b_minimax_h3_bf16.safetensors",
+      "blobId": "6853d92901ec875951cc1c386dc0fe038a796f4d",
+      "size": 51506295256,
+      "lfs": {
+        "sha256": "600d567f6a9629c8574e8e7041b199bdd9c59a986afa7906910a81919610607d",
+        "size": 51506295256,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
+      "blobId": "995573ff360d00441b6a69c38983f09ff23dc206",
+      "size": 27141342152,
+      "lfs": {
+        "sha256": "bc2ced0fbea64757fa9acddccfc0b3f4819d1dcf1da6c124d690d368be283923",
+        "size": 27141342152,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+      "blobId": "c8148bfabfef79b69607053f977a39e0736429c0",
+      "size": 15687142551,
+      "lfs": {
+        "sha256": "35a88d51044231fe332301d7a62aa81e3f2cba62febeb446e2c1e3e0ef76f2c6",
+        "size": 15687142551,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "vae/minimax_h3_audio_vae_fp32.safetensors",
+      "blobId": "90bf58595930e7d56cbe9fecb4ea647d5c0e3aec",
+      "size": 605254808,
+      "lfs": {
+        "sha256": "8e505d95dd1561d47abd43d4238fd40d9bb1ae9e147ed0a4cba778d76ae4db48",
+        "size": 605254808,
+        "pointerSize": 134
+      }
+    },
+    {
+      "rfilename": "vae/minimax_h3_video_vae_fp16.safetensors",
+      "blobId": "56a63ef27e68f3b6d5cd4c704f51f291e40f3e11",
+      "size": 5207808496,
+      "lfs": {
+        "sha256": "7c1f131492e7eddacaac9069a61b81bdd39de5cc96561e677c5eab1cdce5e522",
+        "size": 5207808496,
+        "pointerSize": 135
+      }
+    }
+  ],
+  "spaces": [
+    "embedl/hfviewer",
+    "RioShiina/MiniMax-H3",
+    "MeraTeddBohutBaddaHe/minimax-h3-ultra-fast",
+    "Plaguekind/plaguekind-minimax-h3",
+    "Jojocodex/minimax-h3-spatial-physics-lora",
+    "mayafree/minimax-h3-ultra-fast",
+    "ramu23/minimax-h3-i2v-r2v-nvfp4-cn",
+    "superpg/minimax-h3-ultra-fast-pro",
+    "superpg/minimax-h3-ultra-fast",
+    "boltguo/minimax-h3-ultra-fast",
+    "feihukuai/minimax-h3-ultra-fast",
+    "dagloop5/TestingLorasH3",
+    "prashant-AI-ML/plaguekind-minimax-h3",
+    "prashant-AI-ML/minimax-h3-ultra-fast",
+    "thecsiz/minimax-h3-comfy-demo",
+    "jli1122/minimax-h3-ultra-fast",
+    "tinypony/minimax-h3-demo",
+    "joshuagibson/clipproj-explorer-minimax-h3",
+    "Jojocodex/wushu-action-h3-lora-demo",
+    "dagloop5/TestingSchedulersH3",
+    "jameshuntercarter/minimax-h3-ultra-fast",
+    "Me2123/minimax-h3-demo",
+    "yolomaximo/minimax-h3-demo",
+    "slymun/minimax-h3-ultra-fast",
+    "1gpp1/minimax-h3-comfy-demo",
+    "SharkBait808/minimax-h3-turbo-lora-comfyui-demo",
+    "jojobrentley/minimax-h3-ultra-fast",
+    "systemraquel/minimax-h3-ultra-fast",
+    "dagloop5/TestingStagedDenoisingH3",
+    "djdjdjsksk/minimax-h3-spc",
+    "lbmodels/minimax-h3-ultra-fast",
+    "dagloop5/TestingcheckpointH3",
+    "akone/ViMax-H3-t4-small",
+    "oxicaray/minimax-h3-ultra-fastax",
+    "abdullahhshafique/minimax-h3-ultra-fast",
+    "hp-l33/minimax-h3-dgx-spark",
+    "Rights4AI/minimax-h3-ultra-fast",
+    "hugging-apps/minimax-h3-hybrid-ref2va-demo",
+    "raubatz/minimax-h3-ultra-fast",
+    "Radiotomy/Nova-H3",
+    "fdgfdbvdb/qwen3vl-conditioner",
+    "red-kit/flux-h3-chain",
+    "Mike0021/h3-singularity-comparison",
+    "jing96963/h3-image-studio",
+    "Dhshshd/Ninqggoai",
+    "igitagoz/MiniMax-H3",
+    "Leo91fr/minimax-h3-workflows",
+    "thornmaze/motion-h3",
+    "ghost78092/MiniMax-H3-Turbo-LoRA-Studio"
+  ],
+  "createdAt": "2026-07-30T22:36:12.000Z",
+  "usedStorage": 487908819339
+}

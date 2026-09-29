@@ -1,0 +1,144 @@
+{
+  "_id": "6a72ed404777b55b7f469296",
+  "id": "Kijai/MiniMax-H3-experimental",
+  "private": false,
+  "tags": [
+    "region:us"
+  ],
+  "downloads": 0,
+  "likes": 452,
+  "modelId": "Kijai/MiniMax-H3-experimental",
+  "author": "Kijai",
+  "sha": "f4cac997f880e93cf6940af61ee8d58ef31ff7f3",
+  "lastModified": "2026-08-29T05:47:04.000Z",
+  "gated": false,
+  "disabled": false,
+  "config": {},
+  "siblings": [
+    {
+      "rfilename": ".gitattributes",
+      "blobId": "a6344aac8c09253b3b630fb776ae94478aa0275b",
+      "size": 1519
+    },
+    {
+      "rfilename": "README.md",
+      "blobId": "44e587e3868875b7e3837be2945980f8b1f86159",
+      "size": 658
+    },
+    {
+      "rfilename": "controlnet/minimax_h3_fun_controlnet_union_pruned_bf16.safetensors",
+      "blobId": "edf8b5e97566b1f7702f2802f840e6a644c9d7d2",
+      "size": 4222169456,
+      "lfs": {
+        "sha256": "57fe1e64928a63a55e3cd4586b55cd5d0eb4980648b6f31e5d9dac16fe7f1c48",
+        "size": 4222169456,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "controlnet/minimax_h3_fun_controlnet_union_pruned_int8_convrot.safetensors",
+      "blobId": "128a55d59bdf25ca628181d17df074fd116db3db",
+      "size": 2296635360,
+      "lfs": {
+        "sha256": "9c645c0a308c8af361efd43b409710f6f8fec0db297c29503e141a84991fed0c",
+        "size": 2296635360,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "loras/MiniMax-H3-FL2VA-Acc-8Step_comfy.safetensors",
+      "blobId": "565ac41d66701a43a85b56a0452f203896001738",
+      "size": 1723713944,
+      "lfs": {
+        "sha256": "71347e272513c376ce9a9f5067f1a0748361035ce601678e4e4fc755fb7471ac",
+        "size": 1723713944,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "loras/MiniMax-H3-FL2VA-Acc-8Step_pruned_comfy.safetensors",
+      "blobId": "e633607f4fef97bea18e554e9fcb44d59ccff631",
+      "size": 1725921392,
+      "lfs": {
+        "sha256": "e97b813a6f857b9dab310f31ec30a8334f63a3e7dcb5d07c0c91933d3447a897",
+        "size": 1725921392,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "loras/MiniMax-H3-Ref2VA-Acc-8Step_comfy.safetensors",
+      "blobId": "2f7aa6357d3cb611984281d2cccb3489d16d6a0e",
+      "size": 1723713944,
+      "lfs": {
+        "sha256": "d7cd9480c000d9fc85a4beb7e50fd961d89aea8e2efd5ffefb200ccdcdaf7460",
+        "size": 1723713944,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "loras/MiniMax-H3-Ref2VA-Acc-8Step_pruned_comfy.safetensors",
+      "blobId": "ab639cd09e452060712cf27e0a37a0baf670c089",
+      "size": 1725921392,
+      "lfs": {
+        "sha256": "6f18e1c2eccb14b37322607730f26b16bf1169b56cd098ea006cffaec43d1e39",
+        "size": 1725921392,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "loras/minimax_h3_ref_lora_rank_256_bf16.safetensors",
+      "blobId": "e5a1c0463f53d552a39e39e9c7365a4521f4a827",
+      "size": 2577687536,
+      "lfs": {
+        "sha256": "7979fb9e5ac8f8c165cfe78b2c57d471cc5dbd0f62dac5ebd07f864b404a9c87",
+        "size": 2577687536,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "minimax_h3_fastvideo_vsa_datafree_1300step_4step_int8_convrot.safetensors",
+      "blobId": "21d0c6d9d9b7f3a2c23348eee64a17fef16709a6",
+      "size": 22898594920,
+      "lfs": {
+        "sha256": "7221ae65d78780354d51e5048d29728d9f1f8fb9baf50b1dd3df85f5101413d3",
+        "size": 22898594920,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "minimax_h3_fl2va_pruned_w4a8_mixed.safetensors",
+      "blobId": "62f0cba281f39c07edaa579973fef2a62555c142",
+      "size": 12540858008,
+      "lfs": {
+        "sha256": "01aa7b92c007c599890461c325f9b7e3c96fb06c36f242f95b62f7f20e538dec",
+        "size": 12540858008,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "minimax_h3_ref2va_pruned_w4a8_mixed.safetensors",
+      "blobId": "ce36c80f6097f60112683d03f7fbd53e1ea9b0dc",
+      "size": 11770657048,
+      "lfs": {
+        "sha256": "de2c6c29c4ee702b45e48e40daae3834aeee58ab681c732d9152589a87c89910",
+        "size": 11770657048,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "minimax_h3_video_vae_int8_convrot.safetensors",
+      "blobId": "6cad30d63e27ffe32cdd518c03c2224dc14def40",
+      "size": 3171670912,
+      "lfs": {
+        "sha256": "9bb2d96f218c76babd85e0611b85ca8fb330a90546c01a0005e8a58a59593410",
+        "size": 3171670912,
+        "pointerSize": 135
+      }
+    }
+  ],
+  "spaces": [
+    "RioShiina/MiniMax-H3"
+  ],
+  "createdAt": "2026-08-05T07:58:56.000Z",
+  "usedStorage": 80099179293
+}
