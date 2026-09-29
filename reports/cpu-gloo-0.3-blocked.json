@@ -1,0 +1,12 @@
+{
+  "status": "BLOCKED",
+  "command": "python scripts/probe_cpu_fsdp.py --world-size 1 --output reports/cpu-fsdp-0.3.json",
+  "python": "3.11.16",
+  "torch": "2.12.0+cpu",
+  "world_size": 1,
+  "stage": "torch.distributed.init_process_group gloo",
+  "error": "gloo/transport/tcp/device.cc:186 rv != -1. -1 vs -1. Operation not permitted",
+  "fsdp_forward": "NOT_RUN",
+  "cuda_nccl": "NOT_RUN",
+  "permission_restriction_bypassed": false
+}

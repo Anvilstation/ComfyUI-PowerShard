@@ -1,0 +1,104 @@
+{
+  "arch": "x86_64",
+  "os": "Linux-6.18.44-x86_64-with-glibc2.39",
+  "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "executable": "/workspace/scratch/b4b9b8ef8021/.venv-test/bin/python",
+  "glibc": [
+    "glibc",
+    "2.39"
+  ],
+  "disk": {
+    "total": 33770192896,
+    "used": 2811142144,
+    "free": 29224288256
+  },
+  "packages": {
+    "torch": "2.12.0+cpu",
+    "torchvision": "0.27.0+cpu",
+    "torchaudio": "NOT_INSTALLED",
+    "safetensors": "0.6.2",
+    "tokenizers": "0.22.2",
+    "transformers": "4.57.3",
+    "ray": "NOT_INSTALLED",
+    "xfuser": "NOT_INSTALLED",
+    "kernels": "NOT_INSTALLED",
+    "comfy-kitchen": "0.2.33",
+    "comfy-aimdo": "0.5.3"
+  },
+  "gpu_inventory": {
+    "error": "[Errno 2] No such file or directory: 'nvidia-smi'"
+  },
+  "gpu_topology": {
+    "error": "[Errno 2] No such file or directory: 'nvidia-smi'"
+  },
+  "gpu_p2p": {
+    "error": "[Errno 2] No such file or directory: 'nvidia-smi'"
+  },
+  "nvlink": {
+    "error": "[Errno 2] No such file or directory: 'nvidia-smi'"
+  },
+  "toolkit_nvcc": {
+    "error": "[Errno 2] No such file or directory: 'nvcc'"
+  },
+  "numa": {
+    "error": "[Errno 2] No such file or directory: 'numactl'"
+  },
+  "cpu_topology": {
+    "returncode": 0,
+    "stdout": "Architecture:                            x86_64\nCPU op-mode(s):                          32-bit, 64-bit\nAddress sizes:                           46 bits physical, 48 bits virtual\nByte Order:                              Little Endian\nCPU(s):                                  9\nOn-line CPU(s) list:                     0-8\nVendor ID:                               AuthenticAMD\nModel name:                              AMD EPYC 9V74 80-Core Processor\nBIOS Model name:                           CPU @ 0.0GHz\nBIOS CPU family:                         0\nCPU family:                              25\nModel:                                   17\nThread(s) per core:                      1\nCore(s) per socket:                      9\nSocket(s):                               1\nStepping:                                1\nBogoMIPS:                                5192.26\nFlags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology nonstop_tsc cpuid extd_apicid tsc_known_freq pni pclmulqdq ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand hypervisor lahf_lm cmp_legacy cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw topoext vmmcall fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves avx512_bf16 clzero xsaveerptr arat npt nrip_save tsc_scale vmcb_clean flushbyasid pausefilter pfthreshold v_vmsave_vmload avx512vbmi umip avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq rdpid fsrm arch_capabilities\nHypervisor vendor:                       KVM\nVirtualization type:                     full\nL1d cache:                               160 KiB (5 instances)\nL1i cache:                               160 KiB (5 instances)\nL2 cache:                                5 MiB (5 instances)\nL3 cache:                                32 MiB (1 instance)\nNUMA node(s):                            1\nNUMA node0 CPU(s):                       0-8\nVulnerability Gather data sampling:      Not affected\nVulnerability Ghostwrite:                Not affected\nVulnerability Indirect target selection: Not affected\nVulnerability Itlb multihit:             Not affected\nVulnerability L1tf:                      Not affected\nVulnerability Mds:                       Not affected\nVulnerability Meltdown:                  Not affected\nVulnerability Mmio stale data:           Not affected\nVulnerability Old microcode:             Not affected\nVulnerability Reg file data sampling:    Not affected\nVulnerability Retbleed:                  Not affected\nVulnerability Spec rstack overflow:      Vulnerable\nVulnerability Spec store bypass:         Vulnerable\nVulnerability Spectre v1:                Vulnerable: __user pointer sanitization and usercopy barriers only; no swapgs barriers\nVulnerability Spectre v2:                Vulnerable; STIBP: disabled; PBRSB-eIBRS: Not affected; BHI: Not affected\nVulnerability Srbds:                     Not affected\nVulnerability Tsa:                       Vulnerable\nVulnerability Tsx async abort:           Not affected\nVulnerability Vmscape:                   Not affected",
+    "stderr": ""
+  },
+  "os_release": {
+    "returncode": 0,
+    "stdout": "PRETTY_NAME=\"Ubuntu 24.04.3 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.3 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nPRIVACY_POLICY_URL=\"https://www.ubuntu.com/legal/terms-and-policies/privacy-policy\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo",
+    "stderr": ""
+  },
+  "ram": {
+    "returncode": 0,
+    "stdout": "MemTotal:       22568260 kB\nMemFree:        18526056 kB\nMemAvailable:   21110788 kB\nBuffers:           33680 kB\nCached:          3457456 kB\nSwapCached:            0 kB\nActive:          2211352 kB\nInactive:        1322228 kB\nActive(anon):     697076 kB\nInactive(anon):    72612 kB\nActive(file):    1514276 kB\nInactive(file):  1249616 kB\nUnevictable:       29872 kB\nMlocked:               0 kB\nSwapTotal:             0 kB\nSwapFree:              0 kB\nDirty:              1216 kB\nWriteback:             0 kB\nAnonPages:         72420 kB\nMapped:            64508 kB\nShmem:            697396 kB\nKReclaimable:     205500 kB\nSlab:             270856 kB\nSReclaimable:     205500 kB\nSUnreclaim:        65356 kB\nKernelStack:        3152 kB\nPageTables:         3208 kB\nSecPageTables:         0 kB\nNFS_Unstable:          0 kB\nBounce:                0 kB\nWritebackTmp:          0 kB\nCommitLimit:    11284128 kB\nCommitted_AS:    1159416 kB\nVmallocTotal:   34359738367 kB\nVmallocUsed:        4552 kB\nVmallocChunk:          0 kB\nPercpu:             3024 kB\nAnonHugePages:         0 kB\nShmemHugePages:        0 kB\nShmemPmdMapped:        0 kB\nFileHugePages:     12288 kB\nFilePmdMapped:         0 kB\nBalloon:               0 kB\nHugePages_Total:       0\nHugePages_Free:        0\nHugePages_Rsvd:        0\nHugePages_Surp:        0\nHugepagesize:       2048 kB\nHugetlb:               0 kB\nDirectMap4k:      266240 kB\nDirectMap2M:     7579648 kB\nDirectMap1G:    25165824 kB",
+    "stderr": ""
+  },
+  "toolkit_version_files": {},
+  "transport_overrides": {},
+  "torch": {
+    "version": "2.12.0+cpu",
+    "cuda_build": null,
+    "config": "PyTorch built with:\n  - GCC 13.3\n  - C++ Version: 202002\n  - Intel(R) oneAPI Math Kernel Library Version 2024.2-Product Build 20240605 for Intel(R) 64 architecture applications\n  - Intel(R) MKL-DNN v3.11.2 (Git Hash 03c022d3ffdcee958cfacbe720048e725fdf644c)\n  - OpenMP 201511 (a.k.a. OpenMP 4.5)\n  - LAPACK is enabled (usually provided by MKL)\n  - NNPACK is enabled\n  - CPU capability usage: AVX512\n  - Build settings: BLAS_INFO=mkl, BUILD_TYPE=Release, COMMIT_SHA=7661cd9c6b841b62b7f411aa52ec51f05457263b, CUDA_FLAGS= -DLIBCUDACXX_ENABLE_SIMPLIFIED_COMPLEX_OPERATIONS -Xfatbin -compress-all  -Wno-deprecated-gpu-targets --expt-extended-lambda -DCUB_WRAPPED_NAMESPACE=at_cuda_detail -DDISABLE_CUSPARSE_DEPRECATED -DCUDA_HAS_FP16=1 -D__CUDA_NO_HALF_OPERATORS__ -D__CUDA_NO_HALF_CONVERSIONS__ -D__CUDA_NO_HALF2_OPERATORS__ -D__CUDA_NO_BFLOAT16_CONVERSIONS__ -DC10_NODEPRECATED, CXX_COMPILER=/opt/rh/gcc-toolset-13/root/usr/bin/c++, CXX_FLAGS= -fvisibility-inlines-hidden -DUSE_PTHREADPOOL -DNDEBUG -DUSE_KINETO -DLIBKINETO_NOCUPTI -DLIBKINETO_NOROCTRACER -DLIBKINETO_NOXPUPTI=ON -DUSE_FBGEMM -DUSE_PYTORCH_QNNPACK -DUSE_XNNPACK -DSYMBOLICATE_MOBILE_DEBUG_HANDLE -O2 -fPIC -DC10_NODEPRECATED -Wall -Wextra -Werror=return-type -Werror=non-virtual-dtor -Werror=range-loop-construct -Werror=bool-operation -Wnarrowing -Wno-missing-field-initializers -Wno-unknown-pragmas -Wno-unused-parameter -Wno-strict-overflow -Wno-strict-aliasing -Wno-stringop-overflow -Wsuggest-override -Wno-psabi -Wno-error=old-style-cast -faligned-new -Wno-maybe-uninitialized -fno-math-errno -fno-trapping-math -Werror=format -Wno-dangling-reference -Wno-error=dangling-reference -Wno-stringop-overflow, LAPACK_INFO=mkl, PERF_WITH_AVX=1, PERF_WITH_AVX2=1, TORCH_VERSION=2.12.0, USE_CUDA=0, USE_CUDNN=OFF, USE_CUSPARSELT=OFF, USE_GFLAGS=OFF, USE_GLOG=OFF, USE_GLOO=ON, USE_MKL=ON, USE_MKLDNN=ON, USE_MPI=OFF, USE_NCCL=OFF, USE_NNPACK=ON, USE_OPENMP=ON, USE_ROCM=OFF, USE_ROCM_KERNEL_ASSERT=OFF, USE_XCCL=OFF, USE_XPU=OFF, \n",
+    "cuda_available": false,
+    "distributed": true,
+    "nccl_available": false,
+    "cuda_arch_list": [],
+    "gpus": [],
+    "loaded_nccl": {
+      "paths": [],
+      "note_ru": "Пусто: библиотека ещё не загружена динамически или статически слинкована; повторить после NCCL probe"
+    }
+  },
+  "repositories": {
+    "audit/ComfyUI": {
+      "commit": {
+        "returncode": 0,
+        "stdout": "683421b679f85e0f0fe00fc875640dfcd01103e9",
+        "stderr": ""
+      },
+      "changes": {
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    "/workspace/scratch/b4b9b8ef8021/ComfyUI-PowerShard": {
+      "commit": {
+        "returncode": 128,
+        "stdout": "HEAD",
+        "stderr": "fatal: ambiguous argument 'HEAD': unknown revision or path not in the working tree.\nUse '--' to separate paths from revisions, like this:\n'git <command> [<revision>...] -- [<file>...]'"
+      },
+      "changes": {
+        "returncode": 0,
+        "stdout": "?? .gitignore\n?? LICENSE\n?? __init__.py\n?? licenses/\n?? models/\n?? powershard/\n?? profiles/\n?? pyproject.toml\n?? reports/\n?? requirements-runtime.txt\n?? requirements-test.txt\n?? scripts/\n?? sources.lock.json\n?? tests/\n?? workflows/",
+        "stderr": ""
+      }
+    }
+  },
+  "extensions": {}
+}

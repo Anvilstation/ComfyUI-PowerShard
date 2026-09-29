@@ -1,0 +1,18 @@
+{
+  "date": "2026-09-16",
+  "baseline": "9694964e68d58f7aa5228817dc65ecff9e7cda76",
+  "comfyui": "7a0b5eede3f9721c8faab290689893f36edc6d66",
+  "hardware": "Linux x86_64 CPU only; no CUDA devices, driver or toolkit",
+  "python": "3.11.16",
+  "torch": "2.12.0+cpu",
+  "suite": {"status": "PASS", "tests": 147, "failed": 0, "skipped": 0, "report": "tests-0.3-native.xml"},
+  "cpu_gloo": {"status": "BLOCKED", "world_size": 1, "stage": "init_process_group", "reason": "gloo/transport/tcp/device.cc:186 Operation not permitted", "fsdp_forward": "NOT_RUN"},
+  "cuda_nccl_fsdp_1_to_n": "NOT_RUN: no CUDA GPU",
+  "fsdp_cpu_offload": "NOT_RUN: no CUDA GPU",
+  "actual_cuda_providers": "NOT_RUN: no CUDA GPU; optional providers not installed",
+  "custom_vllm_wheel_power9_v100": "NOT_RUN_ON_AC922: wheel and server not accessible",
+  "h3_pretrained_generation": "NOT_RUN: no checkpoint, encoders, VAE or GPU",
+  "gpu_benchmark_vram_cpu_offload_pss": "NOT_RUN",
+  "frontend_browser": "NOT_RUN: no running ComfyUI browser session; legacy widget order/static graph tests PASS",
+  "server_user_changes": "NOT_AVAILABLE: only saved 0.2.0 Git bundle and Python shim provided"
+}

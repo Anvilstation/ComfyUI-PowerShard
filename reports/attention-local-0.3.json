@@ -1,0 +1,41 @@
+{
+  "providers": [
+    {
+      "name": "torch",
+      "path": "/workspace/scratch/b4b9b8ef8021/.test-env/lib/python3.11/site-packages/torch/__init__.py",
+      "distributions": {
+        "torch": "2.12.0+cpu"
+      },
+      "status": "NOT_PROBED",
+      "legacy_shim": false,
+      "reason": "Наличие модуля не доказывает работоспособность CUDA kernel"
+    },
+    {
+      "name": "flash_attn",
+      "path": null,
+      "distributions": {},
+      "status": "NOT_INSTALLED",
+      "legacy_shim": false,
+      "reason": "Опциональный пакет не найден"
+    },
+    {
+      "name": "vllm_flash_attn",
+      "path": null,
+      "distributions": {},
+      "status": "NOT_INSTALLED",
+      "legacy_shim": false,
+      "reason": "Опциональный пакет не найден"
+    },
+    {
+      "name": "sageattention",
+      "path": null,
+      "distributions": {},
+      "status": "NOT_INSTALLED",
+      "legacy_shim": false,
+      "reason": "Опциональный пакет не найден"
+    }
+  ],
+  "status": "NOT_RUN",
+  "reason": "Нет доступных CUDA GPU",
+  "POWER9_V100_custom_wheel": "NOT_RUN_ON_AC922"
+}

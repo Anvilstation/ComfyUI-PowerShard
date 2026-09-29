@@ -1,0 +1,55 @@
+{
+  "version": "0.4.0",
+  "base_commit": "f4a53c8a2e17c4f01741e65ef46deffc36531071",
+  "test_suite": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0",
+    "tests": "195",
+    "time": "17.065",
+    "timestamp": "2026-09-17T02:00:00.252148+02:00",
+    "hostname": "localhost"
+  },
+  "comfy_sha": "7a0b5eede3f9721c8faab290689893f36edc6d66",
+  "cpu_scope": "native tiny H3 and Qwen, real ComfyUI sampler/CLIP classes, CPU subprocess; no GPU transport proof",
+  "user_reported": {
+    "AC922_3_GPU": [
+      "fsdp2 + vllm-fa/fa/sdpa",
+      "fsdp2sequence + vllm-fa/fa/sdpa"
+    ],
+    "status": "USER_REPORTED",
+    "server_revision": "UNKNOWN",
+    "FSDP_seconds": 48,
+    "sequence_seconds": [
+      120,
+      180
+    ],
+    "paired_manifest": "NOT_AVAILABLE"
+  },
+  "not_run": {
+    "hardware": "NOT_RUN_ON_AC922: no POWER9/V100 access",
+    "custom_wheel": "NOT_RUN_ON_AC922: wheel binary unavailable",
+    "real_h3_generation": "NOT_RUN: no CUDA or full weights",
+    "qwen_fsdp_offload_sequence": "NOT_RUN_CUDA",
+    "spectrum_fsdp_sequence_quality": "NOT_RUN_CUDA",
+    "NVLink_NUMA_transfers": "NOT_RUN_ON_AC922",
+    "GPU_memory_per_rank": "NOT_RUN",
+    "model_CPU_PSS": "NOT_RUN",
+    "GPU_speedup": "NOT_RUN",
+    "browser_workflow": "NOT_RUN"
+  },
+  "blocked": {
+    "cpu_gloo": "Prior init failed Operation not permitted before FSDP; no transport workaround attempted"
+  },
+  "acceptance_complete_on_target_hardware": false,
+  "probes": [
+    "scripts/diagnose.py",
+    "scripts/probe_devices.py",
+    "scripts/probe_h3_cuda.py",
+    "scripts/accept_h3.py",
+    "scripts/accept_qwen.py",
+    "scripts/benchmark_transfer.py",
+    "scripts/benchmark_cases.py"
+  ]
+}

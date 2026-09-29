@@ -1,0 +1,69 @@
+{
+  "device": "CPU x86_64",
+  "torch": "2.12.0+cpu",
+  "weights": "\u043c\u0430\u043b\u044b\u0435 \u0441\u043b\u0443\u0447\u0430\u0439\u043d\u044b\u0435, \u041d\u0415 \u0440\u0435\u0430\u043b\u044c\u043d\u044b\u0435 checkpoint weights",
+  "FSDP": "NOT_RUN",
+  "CUDA_NCCL": "NOT_RUN",
+  "native_H3_model": [
+    {
+      "case": "text",
+      "status": "PASS",
+      "max_abs_video_audio": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "case": "masked",
+      "status": "PASS",
+      "max_abs_video_audio": [
+        0.0,
+        1.4705583453178406e-05
+      ]
+    },
+    {
+      "case": "fl2va",
+      "status": "PASS",
+      "max_abs_video_audio": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "case": "ref2va",
+      "status": "PASS",
+      "max_abs_video_audio": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "case": "audio_scale",
+      "status": "PASS",
+      "max_abs_video_audio": [
+        6.103515625e-05,
+        0.0
+      ]
+    }
+  ],
+  "preprocess_text": "PASS",
+  "small_unsharded_modes": [
+    "eval+no_grad",
+    "eval+inference_mode"
+  ],
+  "full_H3_meta_key_shape_match": "PASS",
+  "config": {
+    "hidden_size": 5376,
+    "num_layers": 50,
+    "token_refiner_num_layers": 2,
+    "num_attention_heads": 56,
+    "attention_head_dim": 128,
+    "ffn_hidden_size": 14336,
+    "text_dim": 5120,
+    "latents_dim": 24,
+    "audio_latents_dim": 32,
+    "rope_inv_freq_len": 16,
+    "adaln_curve_grid": 1025,
+    "time_embed_dim": 8
+  }
+}

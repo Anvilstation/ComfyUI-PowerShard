@@ -1,0 +1,359 @@
+{
+  "status": "PASS",
+  "scope": "container metadata only",
+  "files": 7,
+  "unique_files": 5,
+  "videos": [
+    {
+      "file": "video/low_20260916_165625_00001-audio.mp4",
+      "sha256": "031d3a7409bbb0c3c0d53ce547684b84fa6d25fc2fbaac32abe7341e25bd7ce3",
+      "size_bytes": 333090,
+      "duration_s": 1.625,
+      "streams": [
+        {
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 960,
+          "height": 544,
+          "nb_frames": "39",
+          "avg_frame_rate": "24/1",
+          "sample_rate": null,
+          "channels": null,
+          "duration": "1.625000"
+        },
+        {
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "width": null,
+          "height": null,
+          "nb_frames": "51",
+          "avg_frame_rate": "0/0",
+          "sample_rate": "32000",
+          "channels": 2,
+          "duration": "1.600000"
+        }
+      ],
+      "tag_keys": [
+        "compatible_brands",
+        "encoder",
+        "major_brand",
+        "minor_version",
+        "stream0:encoder",
+        "stream0:handler_name",
+        "stream0:language",
+        "stream0:vendor_id",
+        "stream1:handler_name",
+        "stream1:language",
+        "stream1:vendor_id"
+      ],
+      "embedded_metadata": "NOT_PRESENT",
+      "workflow": "UNKNOWN",
+      "seed": "UNKNOWN",
+      "attention": "UNKNOWN",
+      "sampler": "UNKNOWN",
+      "generation_latency_s": "UNKNOWN",
+      "duplicate_of": null
+    },
+    {
+      "file": "video/low_20260916_165948_00001-audio.mp4",
+      "sha256": "70ba49d3797ad41efd1e9cbf8db51ef29369001ac82a1a1d719ab9c2fc3353b7",
+      "size_bytes": 334376,
+      "duration_s": 1.625,
+      "streams": [
+        {
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 960,
+          "height": 544,
+          "nb_frames": "39",
+          "avg_frame_rate": "24/1",
+          "sample_rate": null,
+          "channels": null,
+          "duration": "1.625000"
+        },
+        {
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "width": null,
+          "height": null,
+          "nb_frames": "51",
+          "avg_frame_rate": "0/0",
+          "sample_rate": "32000",
+          "channels": 2,
+          "duration": "1.600000"
+        }
+      ],
+      "tag_keys": [
+        "compatible_brands",
+        "encoder",
+        "major_brand",
+        "minor_version",
+        "stream0:encoder",
+        "stream0:handler_name",
+        "stream0:language",
+        "stream0:vendor_id",
+        "stream1:handler_name",
+        "stream1:language",
+        "stream1:vendor_id"
+      ],
+      "embedded_metadata": "NOT_PRESENT",
+      "workflow": "UNKNOWN",
+      "seed": "UNKNOWN",
+      "attention": "UNKNOWN",
+      "sampler": "UNKNOWN",
+      "generation_latency_s": "UNKNOWN",
+      "duplicate_of": null
+    },
+    {
+      "file": "video/low_20260916_170253_00001-audio.mp4",
+      "sha256": "8a1c62c87555cd19e0ad3e0c04114267283f1448123b5389abb61f863538533c",
+      "size_bytes": 333801,
+      "duration_s": 1.625,
+      "streams": [
+        {
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 960,
+          "height": 544,
+          "nb_frames": "39",
+          "avg_frame_rate": "24/1",
+          "sample_rate": null,
+          "channels": null,
+          "duration": "1.625000"
+        },
+        {
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "width": null,
+          "height": null,
+          "nb_frames": "51",
+          "avg_frame_rate": "0/0",
+          "sample_rate": "32000",
+          "channels": 2,
+          "duration": "1.600000"
+        }
+      ],
+      "tag_keys": [
+        "compatible_brands",
+        "encoder",
+        "major_brand",
+        "minor_version",
+        "stream0:encoder",
+        "stream0:handler_name",
+        "stream0:language",
+        "stream0:vendor_id",
+        "stream1:handler_name",
+        "stream1:language",
+        "stream1:vendor_id"
+      ],
+      "embedded_metadata": "NOT_PRESENT",
+      "workflow": "UNKNOWN",
+      "seed": "UNKNOWN",
+      "attention": "UNKNOWN",
+      "sampler": "UNKNOWN",
+      "generation_latency_s": "UNKNOWN",
+      "duplicate_of": null
+    },
+    {
+      "file": "video/low_20260916_170519_00001-audio.mp4",
+      "sha256": "8a1c62c87555cd19e0ad3e0c04114267283f1448123b5389abb61f863538533c",
+      "size_bytes": 333801,
+      "duration_s": 1.625,
+      "streams": [
+        {
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 960,
+          "height": 544,
+          "nb_frames": "39",
+          "avg_frame_rate": "24/1",
+          "sample_rate": null,
+          "channels": null,
+          "duration": "1.625000"
+        },
+        {
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "width": null,
+          "height": null,
+          "nb_frames": "51",
+          "avg_frame_rate": "0/0",
+          "sample_rate": "32000",
+          "channels": 2,
+          "duration": "1.600000"
+        }
+      ],
+      "tag_keys": [
+        "compatible_brands",
+        "encoder",
+        "major_brand",
+        "minor_version",
+        "stream0:encoder",
+        "stream0:handler_name",
+        "stream0:language",
+        "stream0:vendor_id",
+        "stream1:handler_name",
+        "stream1:language",
+        "stream1:vendor_id"
+      ],
+      "embedded_metadata": "NOT_PRESENT",
+      "workflow": "UNKNOWN",
+      "seed": "UNKNOWN",
+      "attention": "UNKNOWN",
+      "sampler": "UNKNOWN",
+      "generation_latency_s": "UNKNOWN",
+      "duplicate_of": "video/low_20260916_170253_00001-audio.mp4"
+    },
+    {
+      "file": "video/low_20260916_170832_00001-audio.mp4",
+      "sha256": "031d3a7409bbb0c3c0d53ce547684b84fa6d25fc2fbaac32abe7341e25bd7ce3",
+      "size_bytes": 333090,
+      "duration_s": 1.625,
+      "streams": [
+        {
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 960,
+          "height": 544,
+          "nb_frames": "39",
+          "avg_frame_rate": "24/1",
+          "sample_rate": null,
+          "channels": null,
+          "duration": "1.625000"
+        },
+        {
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "width": null,
+          "height": null,
+          "nb_frames": "51",
+          "avg_frame_rate": "0/0",
+          "sample_rate": "32000",
+          "channels": 2,
+          "duration": "1.600000"
+        }
+      ],
+      "tag_keys": [
+        "compatible_brands",
+        "encoder",
+        "major_brand",
+        "minor_version",
+        "stream0:encoder",
+        "stream0:handler_name",
+        "stream0:language",
+        "stream0:vendor_id",
+        "stream1:handler_name",
+        "stream1:language",
+        "stream1:vendor_id"
+      ],
+      "embedded_metadata": "NOT_PRESENT",
+      "workflow": "UNKNOWN",
+      "seed": "UNKNOWN",
+      "attention": "UNKNOWN",
+      "sampler": "UNKNOWN",
+      "generation_latency_s": "UNKNOWN",
+      "duplicate_of": "video/low_20260916_165625_00001-audio.mp4"
+    },
+    {
+      "file": "video/low_20260916_171302_00001-audio.mp4",
+      "sha256": "56bbcbef76e633d4812032cdc71f787bb61ec7fad9dc7f6f9707388479e9e9bf",
+      "size_bytes": 803094,
+      "duration_s": 5.166667,
+      "streams": [
+        {
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 960,
+          "height": 544,
+          "nb_frames": "124",
+          "avg_frame_rate": "24/1",
+          "sample_rate": null,
+          "channels": null,
+          "duration": "5.166667"
+        },
+        {
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "width": null,
+          "height": null,
+          "nb_frames": "162",
+          "avg_frame_rate": "0/0",
+          "sample_rate": "32000",
+          "channels": 2,
+          "duration": "5.152000"
+        }
+      ],
+      "tag_keys": [
+        "compatible_brands",
+        "encoder",
+        "major_brand",
+        "minor_version",
+        "stream0:encoder",
+        "stream0:handler_name",
+        "stream0:language",
+        "stream0:vendor_id",
+        "stream1:handler_name",
+        "stream1:language",
+        "stream1:vendor_id"
+      ],
+      "embedded_metadata": "NOT_PRESENT",
+      "workflow": "UNKNOWN",
+      "seed": "UNKNOWN",
+      "attention": "UNKNOWN",
+      "sampler": "UNKNOWN",
+      "generation_latency_s": "UNKNOWN",
+      "duplicate_of": null
+    },
+    {
+      "file": "video/low_20260916_172040_00001-audio.mp4",
+      "sha256": "e950aa9bde33a10c4a6fe7d67abaaf4da4a106a353d693d8e63400d078777ebd",
+      "size_bytes": 802547,
+      "duration_s": 5.166667,
+      "streams": [
+        {
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 960,
+          "height": 544,
+          "nb_frames": "124",
+          "avg_frame_rate": "24/1",
+          "sample_rate": null,
+          "channels": null,
+          "duration": "5.166667"
+        },
+        {
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "width": null,
+          "height": null,
+          "nb_frames": "162",
+          "avg_frame_rate": "0/0",
+          "sample_rate": "32000",
+          "channels": 2,
+          "duration": "5.152000"
+        }
+      ],
+      "tag_keys": [
+        "compatible_brands",
+        "encoder",
+        "major_brand",
+        "minor_version",
+        "stream0:encoder",
+        "stream0:handler_name",
+        "stream0:language",
+        "stream0:vendor_id",
+        "stream1:handler_name",
+        "stream1:language",
+        "stream1:vendor_id"
+      ],
+      "embedded_metadata": "NOT_PRESENT",
+      "workflow": "UNKNOWN",
+      "seed": "UNKNOWN",
+      "attention": "UNKNOWN",
+      "sampler": "UNKNOWN",
+      "generation_latency_s": "UNKNOWN",
+      "duplicate_of": null
+    }
+  ],
+  "note_ru": "Нет metadata — параметры UNKNOWN. Длительность видео не является временем генерации; артефакты нельзя приписать attention без исходных PNG и контрольного запуска."
+}

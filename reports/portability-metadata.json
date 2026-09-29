@@ -1,0 +1,81 @@
+[
+  {
+    "package": "safetensors",
+    "version": "0.6.2",
+    "ppc64le_wheels": [
+      "safetensors-0.6.2-cp38-abi3-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl"
+    ],
+    "pure_wheels": [],
+    "sdist": [
+      "safetensors-0.6.2.tar.gz"
+    ],
+    "source": "https://pypi.org/project/safetensors/0.6.2/"
+  },
+  {
+    "package": "tokenizers",
+    "version": "0.22.2",
+    "ppc64le_wheels": [
+      "tokenizers-0.22.2-cp39-abi3-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl",
+      "tokenizers-0.22.2-pp310-pypy310_pp73-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl",
+      "tokenizers-0.22.2-pp39-pypy39_pp73-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl"
+    ],
+    "pure_wheels": [],
+    "sdist": [
+      "tokenizers-0.22.2.tar.gz"
+    ],
+    "source": "https://pypi.org/project/tokenizers/0.22.2/"
+  },
+  {
+    "package": "ray",
+    "version": "2.48.0",
+    "ppc64le_wheels": [],
+    "pure_wheels": [],
+    "sdist": [],
+    "source": "https://pypi.org/project/ray/2.48.0/"
+  },
+  {
+    "package": "xfuser",
+    "version": "0.4.4",
+    "ppc64le_wheels": [],
+    "pure_wheels": [
+      "xfuser-0.4.4-py3-none-any.whl"
+    ],
+    "sdist": [
+      "xfuser-0.4.4.tar.gz"
+    ],
+    "source": "https://pypi.org/project/xfuser/0.4.4/"
+  },
+  {
+    "package": "kernels",
+    "version": "0.17.0",
+    "ppc64le_wheels": [
+      "kernels-0.17.0-cp314-cp314t-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl",
+      "kernels-0.17.0-cp38-abi3-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl"
+    ],
+    "pure_wheels": [],
+    "sdist": [
+      "kernels-0.17.0.tar.gz"
+    ],
+    "source": "https://pypi.org/project/kernels/0.17.0/"
+  },
+  {
+    "package": "comfy-kitchen",
+    "version": "0.2.33",
+    "ppc64le_wheels": [],
+    "pure_wheels": [
+      "comfy_kitchen-0.2.33-py3-none-any.whl"
+    ],
+    "sdist": [],
+    "source": "https://pypi.org/project/comfy-kitchen/0.2.33/"
+  },
+  {
+    "package": "comfy-aimdo",
+    "version": "0.5.3",
+    "ppc64le_wheels": [],
+    "pure_wheels": [
+      "comfy_aimdo-0.5.3-py3-none-any.whl"
+    ],
+    "sdist": [],
+    "source": "https://pypi.org/project/comfy-aimdo/0.5.3/"
+  }
+]

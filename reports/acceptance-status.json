@@ -1,0 +1,25 @@
+{
+  "date": "2026-09-15",
+  "release": "0.2.0",
+  "python": "3.11.16",
+  "torch": "2.12.0+cpu",
+  "comfy_sha": "36da3ff763687eab86a35e1019995dd1fb369b0d",
+  "admission": "capabilities_only",
+  "cpu_tests": {
+    "passed": 46,
+    "failed": 0,
+    "report": "local-py311-tests.xml"
+  },
+  "native_sampler": "PASS_TINY_CPU_SUBPROCESS_SamplerCustomAdvanced_AV",
+  "condition_regression": "PASS_TINY_CPU",
+  "cpu_gloo_fsdp": "BLOCKED_SOCKET_PERMISSION_BEFORE_FORWARD",
+  "cuda_nccl": "NOT_RUN",
+  "real_h3_fsdp_3gpu": "NOT_RUN",
+  "real_h3_int8": "NOT_RUN",
+  "real_h3_cpu_offload": "NOT_RUN",
+  "ac922": "NOT_RUN_ON_AC922",
+  "actual_h3_generation": false,
+  "actual_h3_sharding_proven": false,
+  "compute_speedup_measured": false,
+  "caveat_ru": "Реализованный код не равен аппаратной приёмке; реальные weights/GPU/POWER9 недоступны."
+}
