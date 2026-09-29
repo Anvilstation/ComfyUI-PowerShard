@@ -1,0 +1,2 @@
+# Не включает torch/CUDA/NCCL. Сначала scripts/dependency_plan.py.
+safetensors==0.6.2

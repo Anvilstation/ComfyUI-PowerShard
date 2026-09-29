@@ -1,0 +1,108 @@
+{
+  "Raylight": {
+    "url": "https://github.com/komikndr/raylight",
+    "sha": "9a7c33d52b3d35e29f75ecff3c227de987f0d4cf"
+  },
+  "ComfyUI": {
+    "url": "https://github.com/Comfy-Org/ComfyUI",
+    "sha": "7a0b5eede3f9721c8faab290689893f36edc6d66",
+    "previous_audit_sha": "683421b679f85e0f0fe00fc875640dfcd01103e9"
+  },
+  "MiniMax-H3": {
+    "url": "https://github.com/MiniMax-AI/MiniMax-H3",
+    "sha": "d21241f0a4b3acbb34c97dae47fa417b7065e438"
+  },
+  "Comfy-Kitchen": {
+    "url": "https://github.com/Comfy-Org/comfy-kitchen",
+    "sha": "62c5bb4a5f2f818d4be7e2a51f83aaf1286a1243"
+  },
+  "comfy_files": {
+    "comfy/ldm/minimax/model.py": "0d5edcf32b4b98d704eaa51de60ed71f507d0c7d9845947f566647dc76fb8dfe",
+    "comfy/model_base.py": "6280712f8315f00f19a1ada53e48bf243c818b017fa751b3412092fa0f381e68",
+    "comfy/model_patcher.py": "20818f501b3ff2b9261b2eef63e2e8d4a1cfd07a39a75bbb73463ca2256c1d9a",
+    "comfy/model_management.py": "99923b3ca7c02d60e74557f65d240f996db0571793d871708bdcf7e53d39cc4f",
+    "comfy/supported_models.py": "007f8d1cc2e0d11c0b16c538f79c8f9a9d4e7513c79df405a7457435d14ee0b5",
+    "comfy/samplers.py": "f2c264ca9d394612f828e3ffe167c856a278a10e1711b269f0ba65dccb66393f",
+    "comfy_extras/nodes_minimax_h3.py": "62ec72d4f3b879640dbd41b959a6c1112a82b77478509323094f49dae17fffdb",
+    "comfy/sd.py": "61f07fa4563850635c770fded80d261310da477666c36512d585f51e7e3678a7",
+    "comfy/model_prefetch.py": "1e5b4d03b80848dd1bc297c27635bea2f2a90539cf826a552d32946776ebca51",
+    "comfy/sampler_helpers.py": "53c82235bfea0c4edf3cd5219f080c44c45ac1c9a6c3171f2aae151e18b56b91",
+    "comfy/patcher_extension.py": "1c7b3b855278d0b95d1c1a705fa0b3c91a265f320e2f97bdeb9d15469d6d4ac7",
+    "comfy/ops.py": "e13f918c6a64f1dc2b9ce836868734396849db3eeb80313579afbfa90dd6ae89",
+    "comfy/text_encoders/minimax.py": "0e16e44100d6db2bdfd1292eafd1b2f8d71147c546f49afe292fe4d2cdcefe8a",
+    "execution.py": "c9ef8ea11b8cb7aa80d05f670ca457211869d27623991b66d0014fb9b33fb246",
+    "comfy/text_encoders/qwen3vl.py": "1004f4184c8ca5da74e4147a706bc4f1c9bd1a19ae63db74f3cab88ded0f0255",
+    "comfy/text_encoders/llama.py": "7b7ec6904297117f1bfd6d283ebdd44ae275af163a94c68490c6b0109f896385",
+    "comfy/sd1_clip.py": "cada45bf2cd1e2e20d24a46b959d86fc9f5529953456bb21471735f036e2dc70"
+  },
+  "Comfy-Aimdo": {
+    "url": "https://github.com/Comfy-Org/comfy-aimdo",
+    "sha": "6d5211d60b5f897ca915b9bf181c024779dc3318"
+  },
+  "torch_source_tag": "v2.12.0",
+  "PyTorch": {
+    "url": "https://github.com/pytorch/pytorch",
+    "sha": "0d62256a2b23365f8e1604297eb23a6545102aa8",
+    "tag": "v2.12.0",
+    "local_wheel": "2.12.0+cpu"
+  },
+  "comfy_files_revision": "7a0b5eede3f9721c8faab290689893f36edc6d66",
+  "admission_policy": "capabilities_only; all SHA/hash fields are diagnostic provenance, not version gating",
+  "fp16_fixes": {
+    "Amduraznak": {
+      "url": "https://github.com/Amduraznak/minimax-h3-fp16-fix",
+      "sha": "b09897c5c3bf4af7262bb43d04a71a94563c1590",
+      "license": "MIT"
+    },
+    "FP16Safe": {
+      "url": "https://github.com/aaalll12322/ComfyUI-MiniMaxH3-FP16Safe",
+      "sha": "4badf245c757932ad776c0dd799500428400fb17",
+      "license": "MIT"
+    },
+    "Icbears": {
+      "url": "https://github.com/Icbears/minimax-h3-v100-patch",
+      "sha": "d869f4fc4826ed4b1b1b32c862a2193da0cf8daa",
+      "license": "GPL-3.0-only",
+      "usage": "reference-only; no code copied"
+    }
+  },
+  "test_environment": {
+    "python": "3.11.16",
+    "torch": "2.12.0+cpu",
+    "torchvision": "0.27.0+cpu",
+    "torchaudio": "2.11.0+cpu",
+    "comfy_kitchen": "0.2.34",
+    "date": "2026-09-16",
+    "hardware": "x86_64 CPU; no NVIDIA or POWER9",
+    "version": "0.4.0"
+  },
+  "TorchAudio": {
+    "url": "https://github.com/pytorch/audio",
+    "sha": "b85c99ccac635a06b1afaf5284bf4c1a00c1f9b5",
+    "tag_v2_11_0_sha": "34c52a67e8941bbd8e6adaca0eb0b9eabec11d78"
+  },
+  "audit_history": [
+    {
+      "version": "0.3.0",
+      "ComfyUI": {
+        "url": "https://github.com/Comfy-Org/ComfyUI",
+        "sha": "7a0b5eede3f9721c8faab290689893f36edc6d66",
+        "previous_audit_sha": "683421b679f85e0f0fe00fc875640dfcd01103e9"
+      },
+      "comfy_files_revision": "683421b679f85e0f0fe00fc875640dfcd01103e9"
+    }
+  ],
+  "Spectrum": {
+    "url": "https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3",
+    "sha": "120d72e2f48b781235b34149e39bbdf0f1317d82",
+    "license": "GPL-3.0-or-later",
+    "usage": "research; independent forecast math + distributed gate implementation"
+  },
+  "H3_Qwen": {
+    "url": "https://huggingface.co/Comfy-Org/MiniMax-H3",
+    "revision": "a98869194787969724c7425d95d0ed73ce9202af",
+    "downloaded": "headers only; no tensor weights",
+    "native_geometry": "50 decoder layers, hidden5120, Q64/KV8, head128, vocab151936"
+  },
+  "base_commit": "f4a53c8a2e17c4f01741e65ef46deffc36531071"
+}

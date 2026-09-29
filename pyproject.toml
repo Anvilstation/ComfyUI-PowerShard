@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=70,<82"]
+build-backend = "setuptools.build_meta"
+[project]
+name = "comfyui-powershard"
+version = "0.5.0rc1"
+description = "H3 FSDP2 inference для выбранного CUDA GPU набора"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+dependencies = []
+[tool.setuptools]
+packages = ["powershard"]
+[tool.pytest.ini_options]
+testpaths = ["tests"]

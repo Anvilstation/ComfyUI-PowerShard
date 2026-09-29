@@ -1,0 +1,15 @@
+ComfyUI-PowerShard, 2026. Код пакета: GPL-3.0-or-later, см. LICENSE.
+
+Используемые upstream проекты и авторство:
+- ComfyUI: Comfy и contributors, GPL-3.0-or-later. Используются установленные upstream Python классы, их реализация не включена в этот архив.
+- Raylight: Micko Lesmana и contributors, Apache-2.0. Исходники изучены как существующее решение; код не скопирован. Копия лицензии сохранена для атрибуции аудита.
+- Comfy Kitchen: Comfy и contributors, Apache-2.0. Формат regular Hadamard ConvRot и eager dequant используются как эталон. В powershard/operations.py самостоятельная реализация математического преобразования; CPU test сравнивает её с upstream. Лицензия сохранена.
+- PyTorch: PyTorch contributors; установленная библиотека используется по её лицензии, не включена в архив.
+- MiniMax H3: MiniMax и правообладатели связанных компонентов. Веса не включены. На их использование распространяется MiniMax H3 Community License; копия в licenses.
+- Comfy-Org и Kijai: metadata и model cards преобразованных checkpoints включены с источниками/revisions. Не являются весами, проверкой лицензии или обещанием качества.
+
+- Amduraznak/minimax-h3-fp16-fix: Copyright (c) 2026 Amduraznak, MIT. Идеи FP32 condition/residual и compensated power-of-two projections. Реализация PowerShard самостоятельная; MIT notice сохранён.
+- ComfyUI-MiniMaxH3-FP16Safe: Copyright (c) 2026 MiniMaxH3-FP16Safe contributors, MIT. Идеи structural isolation, instance patching, chunking и deferred checks; MIT notice сохранён.
+- Icbears/minimax-h3-v100-patch (GPL-3.0-only): только техническое исследование; исходный код не копировался и не включён.
+
+SHA и hashes API-файлов: sources.lock.json. Это provenance, НЕ admission/version gate.

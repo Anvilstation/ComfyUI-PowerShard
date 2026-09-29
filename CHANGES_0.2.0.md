@@ -1,0 +1,82 @@
+# Изменения 0.2.0
+
+База: da461b8ab115e4e58a47074b55c70e357d3f9833. До работы дерево было чистым; core ComfyUI не изменён.
+Список изменённых/добавленных файлов; CPU reports — фактические, аппаратные результаты NOT_RUN.
+
+- ARCHITECTURE.md
+- BENCHMARKS.md
+- COMPATIBILITY.md
+- IMPLEMENTATION_REPORT_RU.md
+- KNOWN_LIMITATIONS.md
+- NOTICE
+- README_RU.md
+- docs/ACCEPTANCE.md
+- docs/FP16_FIX_AUDIT.md
+- docs/FP16_SAFE.md
+- docs/INSTALL_PPC64LE.md
+- docs/INSTALL_X86_64.md
+- licenses/Amduraznak-MIT.txt
+- licenses/MiniMaxH3-FP16Safe-MIT.txt
+- models/CHECKPOINTS_RU.md
+- powershard/attention.py
+- powershard/__init__.py
+- powershard/benchmark.py
+- powershard/comfy_adapter.py
+- powershard/config.py
+- powershard/diagnostics.py
+- powershard/fp16_safe.py
+- powershard/fsdp_backend.py
+- powershard/nodes.py
+- powershard/operations.py
+- powershard/patch_config.py
+- powershard/runtime.py
+- powershard/source_guard.py
+- powershard/topology.py
+- powershard/validation.py
+- powershard/worker.py
+- profiles/ac922-v100.json
+- profiles/x86-v100.json
+- pyproject.toml
+- reports/acceptance-status.json
+- reports/local-cpu-gloo311-blocked.json
+- reports/local-environment311.json
+- reports/local-legacy-contract311.json
+- reports/local-native-baseline311.json
+- reports/local-pip-freeze311.txt
+- reports/local-portability311.json
+- reports/local-py311-tests.xml
+- scripts/accept_h3.py
+- scripts/audit_wheels.py
+- scripts/benchmark_transfer.py
+- scripts/build_workflows.py
+- scripts/check_source_requirements.py
+- scripts/compare_block.py
+- scripts/launch_comfy.sh
+- scripts/probe_h3_cuda.py
+- scripts/probe_three.py
+- scripts/test_comfy_contract.py
+- sources.lock.json
+- tests/conftest.py
+- tests/cpu_contract_worker.py
+- tests/test_fp16_safe.py
+- tests/test_native_pipeline.py
+- tests/test_offload_config.py
+- tests/test_portable.py
+- workflows/fl2va_fp16.api.json
+- workflows/fl2va_fp16.ui.json
+- workflows/fl2va_fp16_offload.api.json
+- workflows/fl2va_fp16_offload.ui.json
+- workflows/fl2va_image.api.json
+- workflows/fl2va_image.ui.json
+- workflows/fl2va_int8.api.json
+- workflows/fl2va_int8.ui.json
+- workflows/fl2va_int8_offload.api.json
+- workflows/fl2va_int8_offload.ui.json
+- workflows/fl2va_sequence.api.json
+- workflows/fl2va_sequence.ui.json
+- workflows/ref2va_fp16.api.json
+- workflows/ref2va_fp16.ui.json
+- workflows/ref2va_int8.api.json
+- workflows/ref2va_int8.ui.json
+
+Сам этот manifest добавлен как CHANGES_0.2.0.md.
