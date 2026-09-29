@@ -1,0 +1,15 @@
+Исследованные источники Spectrum:
+
+https://github.com/hanjq17/Spectrum — оригинальный алгоритм, MIT.
+https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3
+commit 120d72e2f48b781235b34149e39bbdf0f1317d82
+Copyright (C) 2026 xmarre
+GPL-3.0-or-later, если не указано иное (COPYRIGHT исходного проекта).
+
+PowerShard реализует Chebyshev/ridge + линейную экстраполяцию и target-only
+audio/video boundary самостоятельно в powershard/spectrum.py. Solver bridges,
+replay и patch code исходного проекта не копировались. Исследование не является
+подтверждением distributed compatibility: upstream оставляет multi-GPU native.
+
+Существующий PowerShard распространяется по GPL-3.0 (LICENSE).
+Исходная лицензия xmarre сохранена рядом как Spectrum-GPL-3.0.txt.
