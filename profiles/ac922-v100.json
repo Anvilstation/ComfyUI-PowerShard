@@ -1,0 +1,18 @@
+{
+  "gpu_ids": [
+    "0",
+    "1",
+    "2"
+  ],
+  "backend": "fsdp2",
+  "precision": "fp16",
+  "attention": "exact_chunked",
+  "reserve_gib": 2.0,
+  "timeout_s": 600,
+  "allow_unverified": false,
+  "release_after_sampling": true,
+  "cpu_offload": false,
+  "pin_memory": true,
+  "prefetch_blocks": 0,
+  "numa_policy": "auto"
+}
