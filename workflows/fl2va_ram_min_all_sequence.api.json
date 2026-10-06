@@ -3,25 +3,10 @@
     "class_type": "PowerShardConfig",
     "inputs": {
       "gpu_ids": "all",
-      "backend": "fsdp2_sequence",
-      "precision": "int8_fp16",
-      "reserve_gib": 2.0,
-      "timeout_s": 1800,
-      "allow_unverified": false,
-      "release_after_sampling": true,
-      "cpu_offload": true,
-      "pin_memory": true,
-      "prefetch_blocks": 0,
-      "numa_policy": "none",
-      "attention_backend": "sdpa",
-      "allow_fallback": true,
-      "memory_policy": "auto",
       "weight_placement": "cpu",
-      "sequence_mode": "token",
-      "sequence_comm_dtype": "fp32",
-      "memory_profile": "ram_min",
-      "workspace_mib": 256,
-      "stage_cache_mib": 64
+      "precision": "int8_fp16",
+      "attention_backend": "sdpa",
+      "sequence_mode": "token"
     }
   },
   "2": {
@@ -31,7 +16,8 @@
       "config": [
         "1",
         0
-      ]
+      ],
+      "keep_in_memory": false
     }
   },
   "19": {
@@ -41,11 +27,8 @@
         "2",
         0
       ],
-      "enabled": true,
       "fp16_safe": true,
-      "debug_finite": false,
-      "mlp_chunk_tokens": 4096,
-      "mlp_chunk_mode": "auto"
+      "debug_finite": false
     }
   },
   "3": {
@@ -58,9 +41,7 @@
       ],
       "precision": "int8_fp16",
       "idle_policy": "cpu_shards",
-      "cache_mib": 256,
-      "mlp_chunk_mode": "auto",
-      "mlp_chunk_tokens": 4096
+      "cache_mib": 256
     }
   },
   "4": {
@@ -79,7 +60,7 @@
     "class_type": "MiniMaxH3ImageToVideo",
     "inputs": {
       "clip": [
-        "3",
+        "24",
         0
       ],
       "vae": [
@@ -96,7 +77,7 @@
     "class_type": "BasicGuider",
     "inputs": {
       "model": [
-        "19",
+        "23",
         0
       ],
       "conditioning": [
@@ -121,7 +102,7 @@
     "class_type": "BasicScheduler",
     "inputs": {
       "model": [
-        "19",
+        "23",
         0
       ],
       "scheduler": "simple",
@@ -234,25 +215,10 @@
     "class_type": "PowerShardConfig",
     "inputs": {
       "gpu_ids": "all",
-      "backend": "fsdp2_sequence",
-      "precision": "int8_fp16",
-      "reserve_gib": 2.0,
-      "timeout_s": 1800,
-      "allow_unverified": false,
-      "release_after_sampling": true,
-      "cpu_offload": true,
-      "pin_memory": true,
-      "prefetch_blocks": 0,
-      "numa_policy": "none",
-      "attention_backend": "sdpa",
-      "allow_fallback": true,
-      "memory_policy": "auto",
       "weight_placement": "cpu",
-      "sequence_mode": "token",
-      "sequence_comm_dtype": "fp32",
-      "memory_profile": "ram_min",
-      "workspace_mib": 256,
-      "stage_cache_mib": 64
+      "precision": "int8_fp16",
+      "attention_backend": "sdpa",
+      "sequence_mode": "token"
     }
   },
   "20": {
@@ -263,6 +229,28 @@
         0
       ],
       "filename_prefix": "PowerShard_PNG/fl2va_ram_min_all_sequence"
+    }
+  },
+  "23": {
+    "class_type": "PowerShardH3MLP",
+    "inputs": {
+      "mode": "auto",
+      "chunk_tokens": 4096,
+      "model": [
+        "19",
+        0
+      ]
+    }
+  },
+  "24": {
+    "class_type": "PowerShardQwenMLP",
+    "inputs": {
+      "mode": "auto",
+      "chunk_tokens": 4096,
+      "clip": [
+        "3",
+        0
+      ]
     }
   }
 }
