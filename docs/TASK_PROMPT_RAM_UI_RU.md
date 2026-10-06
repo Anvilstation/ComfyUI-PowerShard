@@ -1,3 +1,5 @@
+> Историческая документация 0.5.0rc1. Профиль `ram_min` и описанные здесь UI/API относятся к старой версии. Текущие настройки и миграция: [README_RU.md](../README_RU.md); изменения: [PERFORMANCE_FIX_0_5_3_RU.md](../PERFORMANCE_FIX_0_5_3_RU.md).
+
 # Промпт задачи: RAM-профиль, ATS, интерфейс и оптимизации
 
 Доработай существующий ComfyUI-PowerShard на основе присланного кода и экспериментальных исправлений аудита 2026-09-28. Работай в отдельной ветке существующего Git-репозитория. Сохрани исходники, class IDs нод, старые workflows, выбранные CUDA GPU, FP16-safe, INT8 ConvRot, FSDP2, Qwen CLIP, audio/video conditioning и выбранный attention provider. Не изменяй production ComfyUI, torch/CUDA/NCCL/драйвер или пользовательский wheel.
