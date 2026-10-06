@@ -48,12 +48,16 @@ def test_spawn_count_order_cleanup(n,tmp_path,monkeypatch):
     session.close();other.close()
 
 
-def test_rank_error_and_timeout_are_not_suppressed(tmp_path):
+def test_rank_error_exit_and_cancel_are_not_suppressed(tmp_path):
     s=Session(None,DistributedConfig(timeout_s=.01),tmp_path,tmp_path)
-    s.processes=[SimpleNamespace()]*2;s.responses=[queue.Queue(),queue.Queue()]
+    s.processes=[SimpleNamespace(poll=lambda:None)]*2;s.responses=[queue.Queue(),queue.Queue()]
     s.responses[1].put(dict(error='device-side assert'))
     with pytest.raises(RuntimeError,match='rank 1'):s._wait(1)
-    with pytest.raises(TimeoutError):s._wait(2)
+    # Legacy timeout is ignored: cancellation and child liveness terminate waits.
+    def cancel():raise InterruptedError('cancelled by user')
+    with pytest.raises(InterruptedError):s._wait(2,cancel)
+    s.processes[0]=SimpleNamespace(poll=lambda:7,returncode=7)
+    with pytest.raises(RuntimeError,match='exit=7'):s._wait(2)
     s.processes=[];s.responses=[]
 
 

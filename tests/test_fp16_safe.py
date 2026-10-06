@@ -32,6 +32,31 @@ def test_scaled_projection_and_bias(magnitude):
     torch.testing.assert_close(got,expected,atol=magnitude*.012,rtol=.003)
 
 
+@pytest.mark.parametrize("weight_magnitude",[0.1,20000.])
+def test_checkpoint_bounds_keep_large_outputs_finite_without_weight_reductions(weight_magnitude,monkeypatch):
+    from powershard.operations import checkpoint_row_bounds,matmul_constants
+    from powershard.fp16_safe import prepare_matmul
+    g=torch.Generator().manual_seed(333)
+    weight=(torch.rand(23,64,generator=g)*weight_magnitude).half()
+    shards=weight.tensor_split(5,dim=0)
+    bounds=[checkpoint_row_bounds(p,tile_rows=2) for p in shards]
+    constants=matmul_constants(max(b[0] for b in bounds),max(b[1] for b in bounds),64)
+    x=torch.randn(9,64,generator=g)*1e6
+    expected=torch.nn.functional.linear(x,weight.float())
+    # A forward must not read/reduce the whole weight into FP32 again.
+    original_float=torch.Tensor.float
+    def checked_float(t):
+        if t.untyped_storage().data_ptr()==weight.untyped_storage().data_ptr():
+            raise AssertionError("full weight float cast in forward")
+        return original_float(t)
+    monkeypatch.setattr(torch.Tensor,"float",checked_float)
+    got=safe_linear(x,weight,constants=constants)
+    assert got.dtype==torch.float32 and torch.isfinite(got).all()
+    assert ((got-expected).square().mean()/expected.square().mean()).sqrt()<.002
+    if constants[0]==1.:
+        assert prepare_matmul(weight.T,constants)[0].data_ptr()==weight.data_ptr()
+
+
 def test_attention_matmuls_large_values():
     from powershard.attention import exact_attention
     g=torch.Generator().manual_seed(9)
