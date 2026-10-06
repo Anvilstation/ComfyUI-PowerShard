@@ -33,5 +33,10 @@ def environment_identity():
         commit=subprocess.check_output(["git","-C",str(Path(__file__).resolve().parents[1]),"rev-parse","HEAD"],text=True,stderr=subprocess.DEVNULL,timeout=3).strip()
     except (OSError,subprocess.SubprocessError):commit="UNKNOWN"
     torch=sys.modules.get("torch")
+    source=hashlib.sha256()
+    directory=Path(__file__).resolve().parent
+    for path in sorted([*directory.glob("*.py"),*directory.glob("*.cpp")]):
+        source.update(path.name.encode()); source.update(path.read_bytes())
     return dict(powershard=__version__,commit=commit,python=sys.version,architecture=platform.machine(),
+                source_sha256=source.hexdigest(),
                 torch=getattr(torch,"__version__",None),torch_cuda=getattr(getattr(torch,"version",None),"cuda",None))

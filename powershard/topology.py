@@ -60,33 +60,26 @@ def numa_launch_prefix(ident, policy):
 
 
 def _libnuma_bind(node):
-    """Best-effort membind; не расширяет уже выбранную CPU affinity."""
+    """In-process membind + run_on_node через libnuma без numactl-бинарника."""
     try:
         import ctypes
-        lib = ctypes.CDLL("libnuma.so.1", use_errno=True)
+        lib = ctypes.CDLL("libnuma.so.1")
         if lib.numa_available() < 0:
             return False, "numa_available() < 0"
         lib.numa_bitmask_alloc.restype = ctypes.c_void_p
-        lib.numa_bitmask_alloc.argtypes = [ctypes.c_uint]
         lib.numa_bitmask_setbit.argtypes = [ctypes.c_void_p, ctypes.c_uint]
-        lib.numa_bitmask_setbit.restype = ctypes.c_void_p
-        lib.numa_set_membind.argtypes = [ctypes.c_void_p]
-        lib.numa_set_membind.restype = None
         lib.numa_bitmask_free.argtypes = [ctypes.c_void_p]
-        lib.numa_bitmask_free.restype = None
-        mask = lib.numa_bitmask_alloc(max(node+1,lib.numa_max_node()+1))
+        lib.numa_set_membind.argtypes = [ctypes.c_void_p]
+        mask = lib.numa_bitmask_alloc(lib.numa_num_configured_nodes())
         if not mask:
             return False, "numa_bitmask_alloc failed"
         try:
             lib.numa_bitmask_setbit(mask, node)
-            ctypes.set_errno(0)
             lib.numa_set_membind(mask)
-            error = ctypes.get_errno()
-            if error:
-                return False, f"membind failed: errno={error} {os.strerror(error)}"
-            return True, "membind syscall completed; verify actual locality in /proc/self/numa_maps"
+            lib.numa_run_on_node(node)
         finally:
             lib.numa_bitmask_free(mask)
+        return True, "libnuma membind+run_on_node применены"
     except OSError as error:
         return False, f"libnuma недоступна: {error}"
 

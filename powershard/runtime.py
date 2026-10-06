@@ -12,6 +12,7 @@ import tempfile
 import threading
 import weakref
 import time
+import warnings
 from .config import DistributedConfig
 from .patch_config import H3PatchConfig
 from .wire import StagedTensor
@@ -19,6 +20,37 @@ from .wire import StagedTensor
 _SESSIONS = weakref.WeakSet()
 _ACTIVE = None
 _PHASE_LOCK = threading.RLock()
+
+
+def is_user_interrupt(error):
+    # CUDA/NCCL/transport exceptions must NEVER keep a damaged session alive.
+    return isinstance(error, InterruptedError) or (
+        type(error).__name__ == "InterruptProcessingException"
+        and type(error).__module__ == "comfy.model_management")
+
+
+def wait_for_pending_phase(cancel=None):
+    active=_ACTIVE
+    if active is not None:active.wait_for_drain(cancel)
+
+
+def reusable_session(checkpoint, config, comfy_path, report_dir=None, probe_only=False,
+                     patch=None, role="h3", role_options=None):
+    """Reuse identical remote weight owners, not prompt/sampler state."""
+    patch=patch or H3PatchConfig()
+    options=dict(role_options or {})
+    directory=Path(report_dir or Path(tempfile.gettempdir())/"powershard-reports")
+    comfy=str(Path(comfy_path).resolve())
+    retain=not config.release_after_sampling if role=="h3" else options.get("idle_policy")=="keep" or options.get("idle_policy")=="cpu_shards"
+    if retain:
+        wait_for_pending_phase(getattr(sys.modules.get("comfy.model_management"),"throw_exception_if_processing_interrupted",None))
+        with _PHASE_LOCK:
+            for session in list(_SESSIONS):
+                if (session.checkpoint==checkpoint and session.config==config and session.comfy_path==comfy
+                    and session.report_dir==directory and session.probe_only==probe_only
+                    and session.patch==patch and session.role==role and session.role_options==options):
+                    return session
+    return Session(checkpoint,config,comfy, directory,probe_only,patch,role,options)
 
 
 def resolve_gpus(ids):
@@ -50,18 +82,32 @@ class Session:
         self.sampling_context = None
         self.stage = None
         self._stage_data = {}
+        self._wait_state=None
+        self._drain_done=threading.Event();self._drain_done.set()
         _SESSIONS.add(self)
 
     def with_patch(self, patch):
-        return Session(self.checkpoint, self.config, self.comfy_path, self.report_dir, self.probe_only, patch,self.role,self.role_options)
+        return reusable_session(self.checkpoint, self.config, self.comfy_path, self.report_dir, self.probe_only, patch,self.role,self.role_options)
 
     def with_spectrum(self, spectrum):
-        return Session(self.checkpoint,self.config,self.comfy_path,self.report_dir,self.probe_only,self.patch,
+        return reusable_session(self.checkpoint,self.config,self.comfy_path,self.report_dir,self.probe_only,self.patch,
                        self.role,dict(self.role_options,spectrum=spectrum.to_dict()))
 
     @property
     def running(self):
         return bool(self.processes) and all(p.poll() is None for p in self.processes)
+
+    @property
+    def draining(self):return not self._drain_done.is_set()
+
+    @property
+    def retains_weights(self):
+        if self.role=="h3":return not self.config.release_after_sampling
+        return self.role_options.get("idle_policy") in ("keep","cpu_shards")
+
+    def wait_for_drain(self,cancel=None):
+        while not self._drain_done.wait(.05):
+            if cancel is not None:cancel()
 
     def _reader(self, stream, mailbox):
         try:
@@ -75,6 +121,7 @@ class Session:
 
     def start(self, cancel=None):
         global _ACTIVE
+        self.wait_for_drain(cancel);wait_for_pending_phase(cancel)
         with _PHASE_LOCK, self.lock:
             from .web_api import provider_stamp
             stamp = provider_stamp()
@@ -90,7 +137,17 @@ class Session:
             # блокирует испытания. Admission — реальные capabilities/preflight.
             if _ACTIVE is not None and _ACTIVE is not self:
                 _ACTIVE.deactivate()
-            self.close()
+            # Keep at most one loaded weight owner per role. A changed
+            # checkpoint/config/patch must not leave another 50 GiB RAM copy.
+            for other in list(_SESSIONS):
+                if other is not self and other.role==self.role and other.running:
+                    other.close()
+            # Рестарт workers (новая конфигурация). Stage (conditioning по
+            # content-hash) валиден независимо от конфигурации workers —
+            # сохраняем его: call() может уже отстейджить данные ДО первого
+            # start() (audit/прямой вызов forward без preprocess_text),
+            # и безжалостный close() снёс бы только что созданный stage-файл.
+            self.close(keep_stage=True)
             from .devices import resolve_gpu_selection
             self.selected_devices = resolve_gpu_selection(self.config.gpu_ids)
             uuids = [d["uuid"] for d in self.selected_devices]
@@ -118,20 +175,17 @@ class Session:
                 attention=self.attention_policy["fingerprint"],provider_stamp=stamp,
                 checkpoint=checkpoint_stamp,role=self.role,role_options=self.role_options))
             settings["fingerprint"] = self.fingerprint
-            if self.config.weight_placement == "ats":
-                from .ats_probe import isolated_probe
-                import warnings
-                settings["ats_diagnostics"] = [isolated_probe(d,min(90,self.config.timeout_s)) for d in self.selected_devices]
-                for report in settings["ats_diagnostics"]:
-                    if report["status"] == "ERROR":
-                        warnings.warn(f"ATS diagnostic failed; using ordinary CPUOffloadPolicy: {report}")
             (self.path / "settings.json").write_text(json.dumps(settings))
             env = os.environ.copy()
             env["CUDA_VISIBLE_DEVICES"] = ",".join(uuids)
             env["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
             env["PYTHONPATH"] = os.pathsep.join([str(Path(__file__).resolve().parents[1]), self.comfy_path, env.get("PYTHONPATH", "")])
             env["TORCH_NCCL_ASYNC_ERROR_HANDLING"] = "1"
-            # Не заменяем NCCL, allocator, P2P/SHM. Наследуем установленный стек.
+            if self.config.weight_placement == "ats":
+                from .ats_memory import ats_worker_environment
+                env = ats_worker_environment(env)
+            # NCCL/P2P/SHM and the host allocator are inherited untouched.
+            # ATS ranks need native scoped pools instead of cudaMallocAsync.
             try:
                 for rank in range(len(uuids)):
                     from .topology import numa_launch_prefix
@@ -155,18 +209,20 @@ class Session:
                 raise
 
     def _wait(self, sequence, cancel=None):
-        deadline = time.monotonic() + self.config.timeout_s
-        pending = set(range(len(self.processes)))
-        result = [None] * len(self.processes)
+        state=self._wait_state
+        if state is None or state["sequence"]!=sequence:
+            state=dict(sequence=sequence,pending=set(range(len(self.processes))),result=[None]*len(self.processes))
+            self._wait_state=state
+        pending,result=state["pending"],state["result"]
         while pending:
             if cancel is not None:
                 cancel()  # ComfyUI interrupt exception
-            if time.monotonic() > deadline:
-                raise TimeoutError(f"PowerShard timeout на команде {sequence}; все свои workers будут завершены")
             for i in list(pending):
                 try:
                     msg = self.responses[i].get(timeout=.02)
                 except queue.Empty:
+                    if self.processes[i].poll() is not None:
+                        raise RuntimeError(f"PowerShard rank {i} завершился (exit={self.processes[i].returncode}); логи: {self.report_dir}")
                     continue
                 if "error" in msg:
                     raise RuntimeError(f"PowerShard rank {i}: {msg['error']}; логи: {self.report_dir}")
@@ -174,7 +230,8 @@ class Session:
                     raise RuntimeError("Нарушен порядок worker commands")
                 result[i] = msg
                 pending.remove(i)
-        self.history.append({"sequence": sequence, "ranks": result})
+        self.history.append({"sequence": sequence, "session_id":self.path.name if self.path else None, "ranks": result})
+        self._wait_state=None
         return result
 
     def stage_tensors(self, tensors):
@@ -185,34 +242,27 @@ class Session:
         частичная запись стёрла бы ранее staged ключи. Повторный вызов с тем
         же content-hash не дублирует данные.
         """
-        with _PHASE_LOCK, self.lock:
+        with self.lock:
             if self.stage is None:
                 self.stage = Path(tempfile.mkdtemp(prefix="powershard-stage-"))
-            updated = dict(self._stage_data)
+            new = False
             for name, tensor in tensors.items():
                 if name not in self._stage_data:
-                    updated[name] = tensor.detach().to("cpu").contiguous().clone()
-            if len(updated) != len(self._stage_data):
+                    self._stage_data[name] = tensor.detach().to("cpu").contiguous().clone()
+                    new = True
+            if new:
                 from safetensors.torch import save_file
-                temporary = self.stage / "tensors.tmp.safetensors"
-                save_file(updated, str(temporary))
-                os.replace(temporary, self.stage / "tensors.safetensors")
-                self._stage_data = updated
+                save_file(dict(self._stage_data), str(self.stage / "tensors.safetensors"))
             return {k: StagedTensor(k, index=0) for k in self._stage_data}
 
     def stage_dir(self):
         with self.lock:
             return self.stage
 
-    def clear_stage(self):
-        with self.lock:
-            if self.stage is not None:
-                shutil.rmtree(self.stage, ignore_errors=True)
-            self.stage = None
-            self._stage_data.clear()
-
     def call(self, command, args, kwargs, cancel=None):
         from .wire import write_payload, read_payload
+        self.wait_for_drain(cancel);wait_for_pending_phase(cancel)
+        if cancel is not None:cancel() # Do not launch an RPC for an already cancelled prompt.
         with _PHASE_LOCK, self.lock:
             # Сначала сериализация+проверка patches, затем старт/collectives.
             staging = Path(tempfile.mkdtemp(prefix="powershard-input-"))
@@ -230,22 +280,66 @@ class Session:
                 for proc in self.processes:
                     proc.stdin.write(req + "\n"); proc.stdin.flush()
                 response = self._wait(self.sequence, cancel)
+                replies_s = time.perf_counter()-start
+                deserialize_start=time.perf_counter()
                 result = read_payload(out)
+                deserialize_s=time.perf_counter()-deserialize_start
                 shutil.rmtree(out)
                 self.history[-1]["ipc_and_forward_s"] = time.perf_counter()-start
                 self.history[-1]["input_serialization_s"] = serialization_s
+                self.history[-1]["wait_all_ranks_s"] = replies_s
+                self.history[-1]["output_deserialization_s"] = deserialize_s
                 self.history[-1]["command"] = command
                 self.last_memory = max(r.get("metrics", {}).get("memory", {}).get("allocated", 0) for r in response)
                 return result
-            except BaseException:
-                self.close()
+            except BaseException as error:
+                if "start" in locals() and self.path is not None:
+                    partial = []
+                    for rank in range(len(self.processes)):
+                        path=self.report_dir/f"{self.path.name}-rank{rank}-progress.json"
+                        try:
+                            value=json.loads(path.read_text())
+                            if value.get("sequence")==self.sequence:partial.append(value)
+                        except (OSError,ValueError):pass
+                    self.history.append(dict(sequence=self.sequence,command=command,status="INTERRUPTED_OR_FAILED",
+                        error_type=type(error).__name__,elapsed_s=time.perf_counter()-start,rank_progress=partial))
+                if ("start" in locals() and is_user_interrupt(error) and self.retains_weights
+                    and self.running and self._wait_state is not None):
+                    # Keep input/stage files until every rank has acknowledged
+                    # the in-flight command. Never interrupt only some ranks.
+                    self._drain_done.clear()
+                    self.history[-1]["retention"]="DRAINING_CURRENT_RPC"
+                    try:
+                        threading.Thread(target=self._drain_cancelled,args=(self.sequence,staging,out),daemon=True).start()
+                    except RuntimeError as thread_error:
+                        self._drain_done.set();self.close()
+                        warnings.warn(f"PowerShard cancellation drain could not start; workers released: {thread_error}")
+                    else:staging=None
+                else:self.close()
                 raise
             finally:
                 # run-stage НЕ удаляется здесь: он живёт до конца run
                 # (close()). Шаговый staging удаляется как раньше.
-                shutil.rmtree(staging, ignore_errors=True)
+                if staging is not None:shutil.rmtree(staging, ignore_errors=True)
 
-    def close(self):
+    def _drain_cancelled(self,sequence,staging,out):
+        # The sampler releases _PHASE_LOCK immediately after recording the
+        # original interrupt. No further generation steps are executed here.
+        try:
+            with _PHASE_LOCK,self.lock:
+                response=self._wait(sequence)
+                self.history[-1].update(command="cancelled_rpc_drain",status="DISCARDED_AFTER_INTERRUPT")
+                self.last_memory=max(r.get("metrics",{}).get("memory",{}).get("allocated",0) for r in response)
+                self.control("end_run")
+                self.idle()
+        except BaseException as error:
+            warnings.warn(f"PowerShard cancelled RPC could not drain safely; workers released: {error}")
+            self.close()
+        finally:
+            shutil.rmtree(staging,ignore_errors=True);shutil.rmtree(out,ignore_errors=True)
+            self._drain_done.set()
+
+    def close(self, keep_stage=False):
         global _ACTIVE
         with _PHASE_LOCK, self.lock:
             processes, self.processes = self.processes, []
@@ -273,23 +367,28 @@ class Session:
                 f.close()
             self.logs, self.responses = [], []
             if self.path is not None:
-                if self.history:
-                    self.report_dir.mkdir(parents=True, exist_ok=True)
-                    (self.report_dir / (self.path.name + ".json")).write_text(json.dumps(self.history, indent=2))
+                self.flush_history()
                 shutil.rmtree(self.path, ignore_errors=True)
-            if self.stage is not None:
+            if not keep_stage and self.stage is not None:
                 shutil.rmtree(self.stage, ignore_errors=True)
-            self.stage = None
-            self._stage_data = {}
+                self.stage = None
+                self._stage_data = {}
+            elif keep_stage:
+                # Stage переживает рестарт workers: файл уже на диске,
+                # content-hash ключи конфигурация-независимы. Новый worker
+                # прочитает их обычным путём (base=stage в команде).
+                pass
             self.path = None
             self.sequence = 0
             self.last_memory = 0
+            self._wait_state=None
             self.idle_on_cpu=False
             if _ACTIVE is self:
                 _ACTIVE = None
 
     def deactivate(self):
-        if self.role=="qwen" and self.role_options.get("idle_policy")=="cpu_shards" and self.running:
+        if self.draining:return # cleanup must not kill a retained, draining RPC
+        if self.retains_weights and self.running:
             self.idle()
         else:
             self.close()
@@ -298,33 +397,52 @@ class Session:
         global _ACTIVE
         with _PHASE_LOCK, self.lock:
             if not self.running or self.idle_on_cpu:return
-            if not self.config.cpu_offload:
-                self.close();return
             self.sequence+=1
             request=json.dumps(dict(command="idle",sequence=self.sequence))
             try:
                 for p in self.processes:p.stdin.write(request+"\n");p.stdin.flush()
                 replies=self._wait(self.sequence)
-                self.clear_stage()
                 self.last_memory=max(r.get("phase_offload",{}).get("after",{}).get("allocated",0) for r in replies)
                 self.idle_on_cpu=True
                 if _ACTIVE is self:_ACTIVE=None
+                self.flush_history()
             except BaseException:
                 self.close();raise
+
+    def finish_sampling(self):
+        if self.draining:return
+        if self.running:self.control("end_run")
+        if not self.retains_weights:self.close()
+        else:self.idle()
+
+    def flush_history(self):
+        """One CPU-only write at a phase boundary; don't close RAM owners to get logs."""
+        if self.path is None or not self.history:return
+        try:
+            self.report_dir.mkdir(parents=True,exist_ok=True)
+            destination=self.report_dir/(self.path.name+".json")
+            temporary=destination.with_suffix(".json.tmp")
+            temporary.write_text(json.dumps(self.history,indent=2))
+            temporary.replace(destination)
+        except OSError as error:
+            warnings.warn("PowerShard could not save rank history: "+str(error))
 
     def control(self,command):
         if command!="end_run":raise ValueError("Неизвестная session control command")
         with _PHASE_LOCK,self.lock:
-            if not self.running:
-                self.clear_stage()
-                return
+            if not self.running:return
             self.sequence+=1
             try:
                 for p in self.processes:
                     p.stdin.write(json.dumps(dict(command=command,sequence=self.sequence))+"\n");p.stdin.flush()
                 replies=self._wait(self.sequence)
                 self.history[-1]["command"]=command
-                self.clear_stage()
+                # A kept worker must not accumulate prompt conditioning across
+                # runs. Its GPU stage cache was cleared by the same command.
+                if self.stage is not None:
+                    shutil.rmtree(self.stage, ignore_errors=True)
+                    self.stage = None
+                    self._stage_data = {}
                 return replies
             except BaseException:
                 self.close();raise
@@ -337,15 +455,19 @@ class Session:
             steps=context["steps"],sigmas=context["sigmas"],
             manifest=context.get("manifest",{}),
             sampling_wall_s=time.perf_counter()-context["started"],
+            status=context.get("status","UNKNOWN"),
             session_fingerprint=getattr(self,"fingerprint",None),
             history=self.history[context["history_start"]:],
             note="Sampling boundary only: text encoding/VAE/video encoding are separate phases; no raw prompt stored")
         (self.report_dir/("run-"+context["run_id"]+".json")).write_text(json.dumps(value,indent=2))
 
 
-def release_all(preserve_idle_cpu=False):
+def release_all(preserve_idle_cpu=False,preserve_h3_cpu=False):
     for s in list(_SESSIONS):
-        if preserve_idle_cpu and s.role=="qwen" and s.idle_on_cpu:continue
+        preserve=preserve_idle_cpu if s.role=="qwen" else preserve_h3_cpu
+        if preserve and s.retains_weights:
+            if not s.draining:s.idle()
+            continue
         s.close()
 
 

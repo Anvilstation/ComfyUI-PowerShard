@@ -7,7 +7,7 @@ import torch
 import comfy.sd
 import comfy.model_patcher
 import comfy.model_management
-from .runtime import Session
+from .runtime import reusable_session
 from .qwen import QwenConfig,infer_qwen_config,qwen_memory_plan
 from .checkpoint import Checkpoint,memory_plan
 from .conditioning_cache import ConditioningCache,content_hash
@@ -18,6 +18,14 @@ class QwenProxy(torch.nn.Module):
         super().__init__()
         self.session,self.options,self.tokenizer_identity=session,options,tokenizer_identity
         self.clip_options={};self.dtypes={torch.float16};self.device=torch.device("cpu")
+        # ModelPatcher.__init__ adds these only to its initial model. clone()
+        # and with_mlp() replace that model afterwards, so every proxy needs
+        # the complete native load/unpatch contract of its own.
+        self.model_lowvram=False
+        self.lowvram_patch_counter=0
+        self.model_loaded_weight_memory=0
+        self.model_offload_buffer_memory=0
+        self.current_weight_patches_uuid=None
         self.cache=ConditioningCache(options.cache_mib*2**20)
         self.last_encoding={}
 
@@ -41,7 +49,7 @@ class QwenProxy(torch.nn.Module):
                 cancel=comfy.model_management.throw_exception_if_processing_interrupted)
             self.cache.put(key,result)
         if self.options.idle_policy=="release":self.session.close()
-        elif self.options.idle_policy=="cpu_shards":self.session.idle()
+        else:self.session.idle()
         self.last_encoding=dict(cache_hit=hit,encoding_wall_s=time.perf_counter()-start,cache=self.cache.report(),
                                 conditioning_hash=key,idle_policy=self.options.idle_policy)
         return result
@@ -68,27 +76,33 @@ class QwenPatcher(comfy.model_patcher.ModelPatcher):
         other=super().clone(*args,**kwargs)
         other.model=QwenProxy(self.session,self.model.options,self.model.tokenizer_identity)
         other.model.clip_options=copy.deepcopy(self.model.clip_options)
-        if hasattr(self,"powershard_memory_plan"):
-            other.powershard_memory_plan=copy.deepcopy(self.powershard_memory_plan)
         return other
 
     def load(self,device_to=None,**kwargs):
         self.validate();self.model.device=device_to or self.load_device
         self.model.current_patcher=self;self.model.model_loaded_weight_memory=self.model_size()
+        self.model.model_lowvram=False
+        self.model.current_weight_patches_uuid=self.patches_uuid
 
     def loaded_size(self):
         if not self.session.running:
             return 0
+        if self.session.idle_on_cpu:
+            return self.session.last_memory
         # Аналогично H3: до первого RPC — бюджет из qwen memory plan, не ноль,
         # иначе ComfyUI-менеджер перестаёт резервировать VRAM и забивает пул.
         plan = getattr(self, "powershard_memory_plan", None)
+        if self.session.config.weight_placement == "ats":
+            return (plan or {}).get("host_gpu_parameter_budget_bytes", 0)
         return self.session.last_memory or (plan or {}).get("host_gpu_parameter_budget_bytes", 0)
 
     def partially_load(self,device_to,extra_memory=0,force_patch_weights=False):
         self.patch_model(device_to=device_to);return 0
 
     def partially_unload(self,device_to,memory_to_free=0,force_patch_weights=False):
-        size=self.loaded_size();self.session.deactivate();return size
+        size=self.loaded_size();self.session.deactivate()
+        self.model.model_loaded_weight_memory=0
+        return size
 
     def unpatch_model(self,device_to=None,unpatch_weights=True):
         self.session.deactivate()
@@ -114,6 +128,17 @@ class DistributedQwenCLIP(comfy.sd.CLIP):
 
     def clear_cache(self):self.cond_stage_model.cache.clear()
 
+    def with_mlp(self, mode, tokens):
+        self.patcher.validate()
+        other = self.clone()
+        options = replace(self.cond_stage_model.options, mlp_chunk_mode=mode, mlp_chunk_tokens=tokens)
+        old = self.patcher.session
+        session = reusable_session(old.checkpoint, old.config, old.comfy_path, old.report_dir,
+                          patch=old.patch, role="qwen", role_options=options.to_dict())
+        other.patcher.model = QwenProxy(session, options, self.cond_stage_model.tokenizer_identity)
+        other.cond_stage_model = other.patcher.model
+        return other
+
     def state_dict_for_saving(self):
         raise ValueError("Remote CLIP не содержит весов в host; исходный checkpoint сохранён отдельно")
 
@@ -131,17 +156,17 @@ def load_qwen(path,config,options=None,embedding_directory=None,report_dir=None)
     if bool(quant)!=(config.precision=="int8_fp16"):
         raise ValueError("Выберите Qwen precision, соответствующий storage checkpoint")
     if options.idle_policy=="cpu_shards" and not config.cpu_offload:
-        warnings.warn("Qwen idle=cpu_shards включает CPUOffloadPolicy также во время encoding; эффективный cpu_offload=True")
-        config=replace(config,cpu_offload=True)
+        raise ValueError("Qwen idle=cpu_shards требует placement=cpu; для gpu/ats выберите release или keep")
     selected=resolve_gpu_selection(config.gpu_ids)
     comfy_path=Path(comfy.sd.__file__).resolve().parents[1]
-    session=Session(str(ckpt.path),config,comfy_path,report_dir,role="qwen",role_options=options.to_dict())
+    session=reusable_session(str(ckpt.path),config,comfy_path,report_dir,role="qwen",role_options=options.to_dict())
     tokenizer=MiniMaxH3Tokenizer(embedding_directory=embedding_directory)
     token_dir=Path(native.__file__).parent/"qwen25_tokenizer"
     import hashlib
     tokenizer_identity=content_hash([(p.name,hashlib.sha256(p.read_bytes()).hexdigest()) for p in sorted(token_dir.iterdir()) if p.is_file()])
     proxy=QwenProxy(session,options,tokenizer_identity)
-    plan=qwen_memory_plan(ckpt.tensors,len(selected),config.prefetch_blocks,config.cpu_offload)
+    plan=qwen_memory_plan(ckpt.tensors,len(selected),config.prefetch_blocks,config.weight_placement != "gpu")
+    plan["weight_placement"]=config.weight_placement
     size=plan["host_gpu_parameter_budget_bytes"]
     clip=DistributedQwenCLIP(no_init=True)
     clip.patcher=QwenPatcher(proxy,torch.device("cuda",int(selected[0]["user_id"])),torch.device("cpu"),size=size)

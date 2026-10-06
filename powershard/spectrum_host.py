@@ -9,8 +9,6 @@ from .conditioning_cache import content_hash
 def sampler_capability(sampler, config=None):
     from comfy.k_diffusion.sampling import sample_euler
     allow_any = bool(getattr(config, "allow_any_sampler", False))
-    if getattr(sampler,"extra_options",{}).get("s_churn",0)!=0:
-        return False,"Spectrum: s_churn != 0; выполняется обычный FSDP"
     if getattr(sampler,"sampler_function",None) is not sample_euler:
         if allow_any:
             # Opt-in: mechanism forecast/capture семантически не зависит от
@@ -27,7 +25,9 @@ def sampler_capability(sampler, config=None):
 
 
 def spectrum_outer_sample(executor,noise,latent_image,sampler,sigmas,*args,**kwargs):
-    from .runtime import _PHASE_LOCK
+    from .runtime import _PHASE_LOCK,wait_for_pending_phase
+    import comfy.model_management
+    wait_for_pending_phase(comfy.model_management.throw_exception_if_processing_interrupted)
     # Одна GPU sampling phase. Не позволять двум clones одной session заменить
     # run context между forward, если внешний executor использует несколько threads.
     with _PHASE_LOCK:
@@ -41,7 +41,7 @@ def _run_sampling(executor,noise,latent_image,sampler,sigmas,*args,**kwargs):
     spectrum_policy=SpectrumConfig(**session.role_options.get("spectrum",{}))
     eligible,reason=sampler_capability(sampler,spectrum_policy)
     enabled=session.role_options.get("spectrum",{}).get("enabled",False)
-    if enabled and (not eligible or spectrum_policy.allow_any_sampler):warnings.warn(reason)
+    if enabled and not eligible:warnings.warn(reason)
     sampling=patcher.get_model_object("model_sampling")
     timesteps=sampling.timestep(sigmas.detach()).float().cpu().flatten().tolist()
     run_id=uuid.uuid4().hex
@@ -57,15 +57,28 @@ def _run_sampling(executor,noise,latent_image,sampler,sigmas,*args,**kwargs):
     session.sampling_context=dict(run_id=run_id,eligible=eligible,reason=reason,
         timesteps=timesteps,sigmas=sigmas.detach().float().cpu().flatten().tolist(),
         steps=max(0,len(timesteps)-1),started=time.perf_counter(),history_start=len(session.history),manifest=manifest)
+    failed=False
     try:
         return executor(noise,latent_image,sampler,sigmas,*args,**kwargs)
+    except BaseException:
+        failed=True
+        raise
     finally:
         context=session.sampling_context
+        if context is not None:context["status"]="INTERRUPTED_OR_FAILED" if failed else "COMPLETE"
         session.sampling_context=None
+        cleanup_error=None
         try:
-            if session.running:session.control("end_run")
-        finally:
+            session.finish_sampling()
+        except BaseException as error:
+            cleanup_error=error
+        try:
             if context is not None:session.save_run_summary(context)
+        except BaseException as error:
+            cleanup_error=cleanup_error or error
+        if cleanup_error is not None:
+            if failed:warnings.warn(f"PowerShard sampler cleanup failed: {cleanup_error}; original sampling error preserved")
+            else:raise cleanup_error
 
 
 def forward_metadata(session,x,timestep,context,kwargs,options):

@@ -8,14 +8,26 @@ import torch
 from torch.nn import functional as F
 
 
+def configure_matmul(safe):
+    """Worker/probe-local cuBLAS policy; never called in ComfyUI host."""
+    torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = bool(safe)
+    if hasattr(torch.backends.cuda.matmul,"allow_fp16_accumulation"):
+        torch.backends.cuda.matmul.allow_fp16_accumulation = False
+
+
 def power2_scale(ratio):
     # Ограничивается только показатель масштаба снизу нулём, НЕ активации.
     # Все операции остаются на device; нет .item()/Python bool(tensor).
     return torch.exp2(torch.ceil(torch.log2(torch.maximum(ratio, torch.ones_like(ratio)))))
 
 
-def prepare_matmul(b):
+def prepare_matmul(b, constants=None):
     """Подготовить только активную матрицу. Возвращаемые tensors не переживают MLP."""
+    if constants is not None and b.dtype == torch.float16:
+        # Scalar bounds are computed from checkpoint shards once at load. No
+        # FP32 cast/abs/sum of a full FSDP matrix in every Linear/chunk/step.
+        sb, bound_b = constants
+        return b if sb == 1. else b/sb, sb, bound_b
     bf = b.float()
     sb = power2_scale(bf.abs().amax(dim=(-2, -1), keepdim=True) / 16384.)
     bh = (bf / sb).half()
@@ -44,9 +56,10 @@ def scaled_matmul(a, b):
     return prepared_matmul(af, prepare_matmul(bf))
 
 
-def safe_linear(x, weight, bias=None):
+def safe_linear(x, weight, bias=None, constants=None):
     vector = x.ndim == 1
-    out = scaled_matmul(x.unsqueeze(0) if vector else x, weight.transpose(-1, -2))
+    a = x.unsqueeze(0) if vector else x
+    out = prepared_matmul(a, prepare_matmul(weight.transpose(-1, -2), constants))
     if vector:
         out = out.squeeze(0)
     # Bias добавляется ПОСЛЕ компенсации; f(x/s)*s неверно при ненулевом bias.
@@ -66,19 +79,41 @@ class FiniteTracker:
 
     def begin(self, device):
         self.flags = torch.zeros(len(self.labels), dtype=torch.bool, device=device)
+        self.first_slot = torch.full((), -1, dtype=torch.int64, device=device)
+        # Глубокая диагностика (все модули, не только output): tracker.debug
+        # или POWERSHARD_DEBUG_FINITE=1. CPU-read по-прежнему один, на finish.
+        import os
+        self._deep = self.debug or os.environ.get("POWERSHARD_DEBUG_FINITE") == "1"
 
     def observe(self, slot, value):
-        if self.flags is not None and (slot == 0 or self.debug):
-            self.flags[slot].logical_or_(~torch.isfinite(value).all())
+        if self.flags is not None and (slot == 0 or self._deep):
+            bad = ~torch.isfinite(value).all()
+            self.flags[slot].logical_or_(bad)
+            self.first_slot.copy_(torch.where((self.first_slot < 0) & bad, slot, self.first_slot))
 
     def finish(self, outputs):
-        for x in outputs if isinstance(outputs, (tuple, list)) else [outputs]:
-            self.observe(0, x)
-        bad = self.flags.cpu().tolist()  # единственная deferred D2H проверка
+        def visit(value):
+            if isinstance(value, torch.Tensor):
+                self.observe(0, value)
+            elif isinstance(value, dict):
+                for child in value.values(): visit(child)
+            elif isinstance(value, (tuple, list)):
+                for child in value: visit(child)
+        visit(outputs)
+        snapshot = torch.cat((self.flags.to(torch.int64), self.first_slot.reshape(1))).cpu().tolist()
+        bad, first = snapshot[:-1], snapshot[-1]  # one deferred D2H boundary
+        labels = self.labels
         self.flags = None
         if any(bad):
+            bad_names = [name for name, flag in zip(labels, bad) if flag]
+            if len(bad_names) == 1 and bad_names[0] == "output":
+                hint = ("; обнаружен non-finite output; промежуточные tensors "
+                        + ("проверены" if self._deep else "НЕ проверялись")
+                        + "; POWERSHARD_DEBUG_FINITE=1 включает глубокую диагностику")
+            else:
+                hint = "; первый наблюдавшийся non-finite модуль: " + labels[first]
             raise FloatingPointError("H3 FP16 Safe: non-finite после mixed precision: " +
-                                     ", ".join(name for name, flag in zip(self.labels, bad) if flag))
+                                     ", ".join(bad_names) + hint)
 
 
 def fp32_stream_forward(self, x, *args, **kwargs):
@@ -89,25 +124,41 @@ def fp32_stream_forward(self, x, *args, **kwargs):
 
 
 def chunked_mlp_forward(self, x):
-    from .memory_policy import mlp_plan
+    from .memory_policy import mlp_plan, mlp_budget
     from .operations import prepared_linears
     from .telemetry import region
     shape = x.shape
     rows = x.reshape(-1, shape[-1])
     policy = getattr(self, "_ps_mlp_policy", None)
-    mode = policy.mlp_chunk_mode if policy else "manual"
+    mode = policy.mlp_chunk_mode if policy else "off"
     context = getattr(self, "_ps_memory_context", {})
-    requested_mode = mode
-    mode = context.get("mlp_mode_override", mode)
-    budget = context.get("mlp_budget_bytes", 256 * 2**20)
-    plan = mlp_plan(len(rows),shape[-1],self.fc2.in_features,mode,self._ps_mlp_chunk,budget)
-    plan["requested_mode"] = requested_mode
-    result = torch.empty((rows.shape[0], self.fc2.out_features), dtype=torch.float32, device=x.device)
+    if mode == "auto":
+        budget, budget_info = mlp_budget(context, x.device)
+    else:
+        # OFF/MANUAL do not adapt the chunk. Avoid cudaMemGetInfo and allocator
+        # stats in every MLP; the boundary budget only limits optional prep.
+        budget = context.get("mlp_budget_bytes", 256*2**20)
+        budget_info = dict(budget_source="RPC boundary; no per-block allocator sampling")
+    safe = getattr(self.fc1, "_ps_safe", False)
+    dtype = torch.float32 if safe else x.dtype
+    output_bytes = rows.shape[0]*self.fc2.out_features*(4 if safe else x.element_size())
+    plan = mlp_plan(len(rows),shape[-1],self.fc2.in_features,mode,self._ps_mlp_chunk,max(0,budget-output_bytes))
+    plan.update(budget_info)
+    plan["full_output_bytes"] = output_bytes
+    # Publish before the first chunk as well: interrupted RPC diagnostics must
+    # show the chunk actually chosen, not just the last completed forward.
+    self._ps_mlp_report = plan
+    if context.get("_progress"):
+        context["_progress"]("mlp_plan", dict(module=self._ps_tracker.labels[self._ps_finite_slot], **plan))
+    if plan["estimate_exhausted"] and not getattr(self._ps_tracker, "_mlp_floor_warned", False):
+        import warnings
+        warnings.warn("MLP auto: оценка workspace исчерпана; минимальный chunk 256 (или число локальных tokens). Возможен CUDA OOM; проверьте memory plan.")
+        self._ps_tracker._mlp_floor_warned = True
+    result = torch.empty((rows.shape[0], self.fc2.out_features), dtype=dtype, device=x.device)
     # Подготовка весов один раз на MLP, только если остаётся бюджет для chunks.
     # FSDP оборачивает block: внутри этого цикла НЕТ FSDP collectives.
-    allowance = max(0,budget-plan["estimated_chunk_workspace_bytes"]-result.numel()*4)
-    with region("H3_MLP_prepare_and_chunks"),prepared_linears((self.fc1,self.fc2),allowance,
-            enabled=plan["chunks"]>1 and context.get("allow_prepared_weights",True)) as prep:
+    allowance = max(0,budget-plan["estimated_chunk_workspace_bytes"]-output_bytes)
+    with region("H3_MLP_prepare_and_chunks"),prepared_linears((self.fc1,self.fc2),allowance,enabled=plan["chunks"]>1) as prep:
         plan.update(prep)
         for a in range(0, rows.shape[0], plan["effective_tokens"]):
             b = min(a+plan["effective_tokens"], rows.shape[0])
@@ -161,4 +212,10 @@ def apply_fp16_safe(net, policy):
         for block in list(net.blocks) + list(net.token_refiner.blocks):
             wrap_safe_block(block, policy.mlp_chunk_tokens, policy)
         net.condition_proj._ps_fp32 = True
+    else:
+        # Chunking is independent of the numerical patch, including mode=off.
+        for block in list(net.blocks) + list(net.token_refiner.blocks):
+            block.mlp._ps_mlp_chunk = policy.mlp_chunk_tokens
+            block.mlp._ps_mlp_policy = policy
+            block.mlp.forward = types.MethodType(chunked_mlp_forward, block.mlp)
     return tracker

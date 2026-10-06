@@ -7,7 +7,7 @@ import comfy.model_patcher
 import comfy.model_management
 import comfy.supported_models
 from .checkpoint import Checkpoint, memory_plan
-from .runtime import Session
+from .runtime import reusable_session
 from .wire import validate_options, has_effect, StagedTensor
 from .conditioning_cache import content_hash
 from .source_guard import verify_comfy
@@ -42,16 +42,13 @@ class DiffusionProxy(torch.nn.Module):
         """Один раз за run пишет context в run-stage; дальше — StagedTensor.
 
         Тензоры на CPU (host-сторона модели); worker кэширует их на device.
-        Stage живёт до session.close() — конец run/patch/precision-смена
-        создаёт новую сессию, поэтому stale-ссылки невозможны. Ключ —
+        Stage очищается на end_run/close; каждый новый forward заново
+        регистрирует conditioning, поэтому stale-ссылки невозможны. Ключ —
         content-hash (shape+bytes), а не id(): ComfyUI может переиспользовать
         аллокацию с тем же адресом под другой conditioning.
         """
-        # Initial start cleanup must happen BEFORE the stage is published.
-        self.session.start(cancel=comfy.model_management.throw_exception_if_processing_interrupted)
-        cpu = context.detach().to("cpu")
-        key = "context_" + content_hash(cpu)
-        self.session.stage_tensors({key: cpu})
+        key = "context_" + content_hash(context.detach().to("cpu"))
+        self.session.stage_tensors({key: context.detach().to("cpu")})
         return StagedTensor(key, index=0)
 
     def forward(self, x, timestep, context, control=None, transformer_options=None, **kwargs):
@@ -61,11 +58,9 @@ class DiffusionProxy(torch.nn.Module):
         if self.session.role_options.get("spectrum",{}).get("enabled",False):
             from .spectrum_host import forward_metadata
             kwargs=dict(kwargs,_powershard_spectrum=forward_metadata(self.session,x,timestep,context,kwargs,transformer_options or {}))
-        from .runtime import _PHASE_LOCK
-        with _PHASE_LOCK, self.session.lock:
-            staged = self._stage_conditioning(context)
-            return self._call("forward", (x, timestep, staged),
-                              dict(transformer_options=transformer_options or {}, **kwargs), x[0].device)
+        staged = self._stage_conditioning(context)
+        return self._call("forward", (x, timestep, staged),
+                          dict(transformer_options=transformer_options or {}, **kwargs), x[0].device)
 
 
 class RemoteH3(comfy.model_base.MiniMaxH3):
@@ -121,9 +116,15 @@ class PowerShardPatcher(comfy.model_patcher.ModelPatcher):
             raise ValueError("LoRA, hooks и weight patches ещё не поддерживаются")
         if self.forced_hooks is not None or self.additional_models:
             raise ValueError("Дополнительные модели/hooks не поддерживаются")
-        for family in (strip_internal_wrappers(self.wrappers), self.callbacks):
-            if any(v for groups in family.values() for v in groups.values()):
-                raise ValueError("Сторонние callbacks/wrappers PowerShard не поддерживает")
+        # Сторонние wrappers/callbacks: по умолчанию отказ — они могут менять
+        # тензоры между RPC (LoRA-стиль), и workers увидят не то, что host.
+        # allow_host_wrappers=True (opt-in): выполняем их на host; наблюдатели
+        # (логирование, превью, telemetry) работают, модификаторы — на риск.
+        if not self.session.config.allow_host_wrappers:
+            for family in (strip_internal_wrappers(self.wrappers), self.callbacks):
+                if any(v for groups in family.values() for v in groups.values()):
+                    raise ValueError("Сторонние callbacks/wrappers: установите allow_host_wrappers=True в PowerShard-конфиге "
+                                     "(они выполнятся на host; wrappers, меняющие тензоры, могут дать неверный результат)")
         if set(self.object_patches) - {"model_sampling"}:
             raise ValueError("Разрешён только native model_sampling patch")
         if any(has_effect(v) for k,v in self.model_options.items() if k not in {"transformer_options", "to_load_options"}):
@@ -150,12 +151,17 @@ class PowerShardPatcher(comfy.model_patcher.ModelPatcher):
     def loaded_size(self):
         if not self.session.running:
             return 0
+        if self.session.idle_on_cpu:
+            # Zero is a measured parking result, not a missing first-RPC sample.
+            return self.session.last_memory
         # Worker allocations видны NVML/free VRAM, но не host torch allocator.
         # До первого worker-замера отдаём бюджет из memory plan (шарды +
         # active/prefetch groups), НЕ ноль: ComfyUI-менеджер с нулевой оценкой
         # перестаёт резервировать VRAM и забивает пул другими моделями.
         # После первого RPC — фактический allocated workers.
         plan = getattr(self, "powershard_memory_plan", None)
+        if self.session.config.weight_placement == "ats":
+            return (plan or {}).get("host_gpu_parameter_budget_bytes", 0)
         return self.session.last_memory or (plan or {}).get("host_gpu_parameter_budget_bytes", 0)
 
     def partially_load(self, device_to, extra_memory=0, force_patch_weights=False):
@@ -165,20 +171,20 @@ class PowerShardPatcher(comfy.model_patcher.ModelPatcher):
 
     def partially_unload(self, device_to, memory_to_free=0, force_patch_weights=False):
         before = self.loaded_size()
-        self.session.close()
+        self.session.deactivate()
         self.model.model_loaded_weight_memory = 0
         return before
 
     def unpatch_model(self, device_to=None, unpatch_weights=True):
         # ModelPatcher переносит только маленький native model_sampling и proxy без weights.
-        self.session.close()
+        self.session.deactivate()
         return super().unpatch_model(device_to=device_to, unpatch_weights=unpatch_weights)
 
     def cleanup(self):
         try:
             super().cleanup()
         finally:
-            if self.session.config.release_after_sampling:
+            if self.session.config.release_after_sampling and not self.session.draining:
                 self.session.close()  # Освободить выбранные GPU перед audio/video VAE.
 
 
@@ -209,15 +215,18 @@ def load_model(path, config, report_dir=None):
     model_config = comfy.supported_models.MiniMaxH3(dict(shape, image_model="minimax_h3", disable_unet_model_creation=True, dtype=torch.float16))
     model_config.manual_cast_dtype = torch.float16
     model = RemoteH3(model_config, device=torch.device("cpu"))
-    session = Session(str(checkpoint.path), config, comfy_path, report_dir=report_dir)
+    from .patch_config import H3PatchConfig
+    session = reusable_session(str(checkpoint.path), config, comfy_path, report_dir=report_dir,
+                      patch=H3PatchConfig(enabled=True, mlp_chunk_mode="off", mlp_chunk_tokens=4096))
     model.diffusion_model = DiffusionProxy(session, shape)
+    model.diffusion_model.dtype = torch.float32
     model.eval().requires_grad_(False)
     from .devices import resolve_gpu_selection
     selected = resolve_gpu_selection(config.gpu_ids)
     plan = memory_plan(checkpoint.tensors, bool(quant), len(selected))
     # CPUOffloadPolicy shards не занимают постоянную GPU память. В budget
     # остаются собранные current/prefetch groups. Это estimate, не measured VRAM.
-    size = (0 if config.cpu_offload else plan["shard_bytes_lower_bound"])
+    size = (plan["shard_bytes_lower_bound"] if config.weight_placement == "gpu" else 0)
     size += (1+config.prefetch_blocks)*plan["largest_group_bytes_upper_bound"]
     plan["host_gpu_parameter_budget_bytes"] = size
     patcher = PowerShardPatcher(model, torch.device("cuda", int(selected[0]["user_id"])), torch.device("cpu"), size=size)

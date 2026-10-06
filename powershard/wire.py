@@ -92,14 +92,10 @@ def write_payload(directory, value):
         (p / "tensors.safetensors").write_bytes(b"")
 
 
-def read_payload(directory, device="cpu", base_directory=None, stage_cache=None,
-                 cache_device=None, cache_limit_bytes=None):
+def read_payload(directory, device="cpu", base_directory=None, stage_cache=None):
     import torch
     from safetensors import safe_open
     p = Path(directory)
-    cache_device = device if cache_device is None else cache_device
-    if cache_limit_bytes is not None and cache_limit_bytes < 0:
-        raise ValueError("cache_limit_bytes должен быть >= 0")
     tree = json.loads((p / "tree.json").read_text())
     # base_directory: run-stage с тяжёлыми conditioning тензорами. Ссылки
     # {"$tensor": key} относятся к step-payload (последний источник),
@@ -107,44 +103,19 @@ def read_payload(directory, device="cpu", base_directory=None, stage_cache=None,
     sources = [p]
     if base_directory is not None and Path(base_directory) != p:
         sources.insert(0, Path(base_directory))
-    from contextlib import ExitStack
-    stack = ExitStack()
     readers = []
-    try:
-        for source in sources:
-            tensor_file = source / "tensors.safetensors"
-            readers.append(stack.enter_context(safe_open(str(tensor_file), framework="pt", device="cpu"))
-                           if tensor_file.exists() and tensor_file.stat().st_size > 0 else None)
-        if stage_cache is not None:
-            base_file = sources[0] / "tensors.safetensors"
-            stat = base_file.stat()
-            generation = (str(base_file.resolve()),stat.st_dev,stat.st_ino,stat.st_mtime_ns,stat.st_size,
-                          str(device),str(cache_device),cache_limit_bytes)
-            if stage_cache.get("__generation__") != generation:
-                stage_cache.clear()
-                stage_cache["__generation__"] = generation
-    except BaseException:
-        stack.close()
-        raise
+    for source in sources:
+        tensor_file = source / "tensors.safetensors"
+        if tensor_file.exists() and tensor_file.stat().st_size > 0:
+            readers.append(safe_open(str(tensor_file), framework="pt", device="cpu"))
+        else:
+            readers.append(None)  # retain source indices even for an empty file
     def resolve(index):
-        if index < 0 or index >= len(readers) or readers[index] is None:
+        if index < 0 or index >= len(readers):
             raise ValueError(f"Staged tensor ссылается на payload #{index}, но доступно только {len(readers)} источников")
+        if readers[index] is None:
+            raise ValueError(f"Источник payload #{index} не содержит tensors")
         return readers[index]
-    def owned_transfer(value, target):
-        moved = value.to(target)
-        # A cross-device copy already owns storage. Clone only when .to was a
-        # no-op; do not double the CUDA peak by cloning a fresh H2D result.
-        return moved.clone() if moved is value else moved
-    def keep(key, value):
-        size = value.untyped_storage().nbytes()
-        if cache_limit_bytes is not None:
-            if size > cache_limit_bytes:
-                return
-            def entries():
-                return [(k,v) for k,v in stage_cache.items() if isinstance(v,torch.Tensor)]
-            while sum(v.untyped_storage().nbytes() for _,v in entries())+size > cache_limit_bytes:
-                del stage_cache[entries()[0][0]]
-        stage_cache[key] = value
     def decode(x):
         if not isinstance(x, dict):
             return x
@@ -155,22 +126,15 @@ def read_payload(directory, device="cpu", base_directory=None, stage_cache=None,
                 # из кэша (изоляция от in-place мутаций модели сохранена).
                 cache_key = x["$tensor"]
                 if cache_key in stage_cache:
-                    value = stage_cache.pop(cache_key)
-                    stage_cache[cache_key] = value  # LRU; metadata is excluded
-                    return owned_transfer(value, device)
-                # Own storage even for device=cpu; never keep an mmap of a
-                # published stage file that may be replaced by another prompt.
-                value = owned_transfer(resolve(index).get_tensor(x["$tensor"]), cache_device)
-                keep(cache_key, value)
-                return owned_transfer(value, device)
+                    return stage_cache[cache_key].clone()
+                value = resolve(index).get_tensor(x["$tensor"]).to(device)
+                stage_cache[cache_key] = value
+                return value.clone()
             # clone отключает зависимость результата CPU от mmap после удаления input dir.
-            return owned_transfer(resolve(index).get_tensor(x["$tensor"]),device)
+            return resolve(index).get_tensor(x["$tensor"]).to(device).clone()
         if "$tuple" in x:
             return tuple(decode(v) for v in x["$tuple"])
         if "$list" in x:
             return [decode(v) for v in x["$list"]]
         return {k: decode(v) for k, v in x["$dict"].items()}
-    try:
-        return decode(tree)
-    finally:
-        stack.close()
+    return decode(tree)

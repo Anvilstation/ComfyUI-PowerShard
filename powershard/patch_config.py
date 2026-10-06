@@ -10,7 +10,7 @@ class H3PatchConfig:
     fp16_safe: bool = True
     debug_finite: bool = False
     mlp_chunk_tokens: int = 512
-    mlp_chunk_mode: str = "manual"
+    mlp_chunk_mode: str = "off"
 
     def __post_init__(self):
         if self.mlp_chunk_tokens < 1:

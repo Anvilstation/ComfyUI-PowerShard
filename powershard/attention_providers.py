@@ -1,8 +1,10 @@
 """Lazy instance adapters. Никакого shadowing установленного flash_attn."""
 import importlib
+import importlib.util
 import importlib.metadata
 import inspect
 import warnings
+import os
 from pathlib import Path
 import torch
 from .attention_contract import UnsupportedAttention, validate
@@ -14,7 +16,7 @@ def module_identity(name, module=None):
     versions = {d:importlib.metadata.version(d) for d in distributions}
     path = str(getattr(module,"__file__", "unknown"))
     stat = Path(path).stat() if Path(path).is_file() else None
-    return dict(module=name,path=path,distributions=versions,
+    return dict(module=name,actual_module=getattr(module,"__name__",name),path=path,distributions=versions,
                 declared_version=getattr(module,"__version__",None),
                 file_identity=[stat.st_size,stat.st_mtime_ns] if stat else None,
                 legacy_shim="flash_attn_shim" in path or "shim" in str(getattr(module,"__version__","")))
@@ -23,10 +25,31 @@ def module_identity(name, module=None):
 class FlashProvider:
     def __init__(self, name="flash_attn", module=None):
         self.name = name
+        import_error=None
+        if module is None and name=="flash_attn":
+            custom=os.environ.get("POWERSHARD_FLASH_ATTN_SHIM")
+            if custom:
+                path=Path(custom)
+                if not path.is_absolute() or not path.is_file():
+                    raise UnsupportedAttention("POWERSHARD_FLASH_ATTN_SHIM requires an existing absolute .py path")
+                spec=importlib.util.spec_from_file_location("_powershard_external_flash_attn",str(path))
+                if spec is None or spec.loader is None:raise UnsupportedAttention("Cannot load external Flash shim")
+                module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+            else:
+                try:module=importlib.import_module(name)
+                except ImportError as error:
+                    import_error=str(error)
+                    # Explicit, scoped API compatibility. This is still the
+                    # vLLM CUDA implementation, not a newly installed FA2.
+                    module=importlib.import_module("powershard.flash_attn_shim")
         self.module = importlib.import_module(name) if module is None else module
         self.identity = module_identity(name,self.module)
+        if import_error:self.identity["native_import_error"]=import_error
+        implementation=getattr(self.module,"implementation",None)
+        if implementation is not None:
+            self.identity["implementation"]=module_identity("vllm_flash_attn",implementation)
         if self.identity["legacy_shim"]:
-            warnings.warn("Признаки глобального flash_attn_shim в path/version: проверьте origin. Допуск определяется numerical probe, не строкой версии.")
+            warnings.warn("Flash API shim detected; implementation/origin is recorded. Admission requires the numerical probe, not the version label.")
         self.varlen = getattr(self.module,"flash_attn_varlen_func",None)
         self.dense = getattr(self.module,"flash_attn_func",None)
         if not callable(self.varlen) and not callable(self.dense):
@@ -38,6 +61,9 @@ class FlashProvider:
                 try:self.signatures[mode] = inspect.signature(fn)
                 except (TypeError,ValueError) as error:raise UnsupportedAttention(f"Нельзя проверить {name}.{mode} signature: {error}") from error
         self.identity["signatures"] = {k:str(v) for k,v in self.signatures.items()}
+        self.use_varlen=self.varlen is not None and (self.name=="vllm_flash_attn" or self.dense is None or self.identity["legacy_shim"])
+        self.identity["entrypoint"]="varlen" if self.use_varlen else "dense"
+        self.identity["entrypoint_module"]=getattr(self.varlen if self.use_varlen else self.dense,"__module__",None)
 
     def kwargs(self,o,mode):
         parameters = self.signatures[mode].parameters
@@ -67,8 +93,7 @@ class FlashProvider:
     def __call__(self,q,k,v,o):
         self.check(q,k,v,o)
         # vLLM custom build: предпочитается его реальный varlen entrypoint.
-        use_varlen = self.varlen is not None and (self.name == "vllm_flash_attn" or self.dense is None)
-        if use_varlen:
+        if self.use_varlen:
             b,lq,hq,dq = q.shape
             _,lk,hk,dk = k.shape
             dv = v.shape[-1]

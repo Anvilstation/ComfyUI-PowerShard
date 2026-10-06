@@ -83,7 +83,8 @@ def bias_tile(q,k,o,a,b,c,d):
 
 
 def math_attention(q,k,v,o,query_chunk=128,key_chunk=512,compute_fp16=False):
-    b,lq,h,d,lk,hk,dv = validate(q,k,v,o)
+    b,lq,h,d,lk,_,dv = validate(q,k,v,o)
+    k,v = expand_kv(q,k,v)
     qh,kh,vh = (x.transpose(1,2) for x in (q,k,v))
     scale = d**-.5 if o.softmax_scale is None else o.softmax_scale
     output = torch.empty((b,h,lq,dv),device=q.device,dtype=q.dtype)
@@ -93,16 +94,6 @@ def math_attention(q,k,v,o,query_chunk=128,key_chunk=512,compute_fp16=False):
     probs = torch.empty((b,h,lq,lk),device=q.device,dtype=torch.float32) if o.return_attn_probs else None
     from .fp16_safe import scaled_matmul
     mm = scaled_matmul if compute_fp16 else lambda x,y: x.float() @ y.float()
-    # Broadcast GQA groups at GEMM, never materialize the whole repeated KV.
-    # Head order: contiguous groups of Hq/Hkv query heads share one KV head.
-    def qk(qs,ks):
-        if h == hk:
-            return mm(qs,ks.transpose(-1,-2))
-        return mm(qs.reshape(b,hk,h//hk,qs.shape[-2],d),ks.unsqueeze(2).transpose(-1,-2)).reshape(b,h,qs.shape[-2],ks.shape[-2])
-    def pv(ps,vs):
-        if h == hk:
-            return mm(ps,vs)
-        return mm(ps.reshape(b,hk,h//hk,ps.shape[-2],ps.shape[-1]),vs.unsqueeze(2)).reshape(b,h,ps.shape[-2],dv)
     for a in range(0,lq,query_chunk):
         z = min(a+query_chunk,lq)
         qs = qh[...,a:z,:]
@@ -111,24 +102,24 @@ def math_attention(q,k,v,o,query_chunk=128,key_chunk=512,compute_fp16=False):
         acc = torch.zeros((b,h,z-a,dv),device=q.device)
         for c in range(0,lk,key_chunk):
             e = min(c+key_chunk,lk)
-            scores = qk(qs,kh[...,c:e,:])*scale + bias_tile(q,k,o,a,z,c,e)
+            scores = mm(qs,kh[...,c:e,:].transpose(-1,-2))*scale + bias_tile(q,k,o,a,z,c,e)
             new_m = torch.maximum(m,scores.amax(-1,keepdim=True))
             # Только fully masked rows имеют нулевой результат. NaN не скрывается.
             safe_m = torch.where(new_m == -torch.inf,0.,new_m)
             alpha = torch.exp(m-safe_m)
             p = torch.exp(scores-safe_m)
             pd = F.dropout(p,p=o.dropout_p,training=True) if o.dropout_p else p
-            acc = acc*alpha + pv(pd,vh[...,c:e,:])
+            acc = acc*alpha + mm(pd,vh[...,c:e,:])
             den = den*alpha+p.sum(-1,keepdim=True)
             m = new_m
         output[...,a:z,:] = acc/torch.where(den==0,1.,den)
         if probs is not None:
             # Диагностический контракт: одна полная строка softmax, один dropout.
-            scores = qk(qs,kh)*scale+bias_tile(q,k,o,a,z,0,lk)
+            scores = mm(qs,kh.transpose(-1,-2))*scale+bias_tile(q,k,o,a,z,0,lk)
             logsum = torch.logsumexp(scores,-1,keepdim=True)
             p = torch.exp(scores-torch.where(logsum == -torch.inf,0.,logsum))
             p = F.dropout(p,p=o.dropout_p,training=True) if o.dropout_p else p
-            output[...,a:z,:] = pv(p,vh)
+            output[...,a:z,:] = mm(p,vh)
             probs[...,a:z,:],lse[...,a:z] = p,logsum.squeeze(-1)
     output = output.transpose(1,2).contiguous()
     return (output,lse,probs) if o.return_attn_probs else output
@@ -143,61 +134,12 @@ def sdpa_attention(q,k,v,o):
     if o.window_size != (-1,-1) or o.alibi_slopes is not None or (o.causal and o.causal_alignment != "upper_left") or (o.causal and o.mask is not None):
         raise UnsupportedAttention("Составной mask/window/ALiBi требует tiled math без большой dense mask")
     k,v = expand_kv(q,k,v)
-    # SDPA accepts FP32 additive bias with half Q. Preserve its finite range.
-    # Unsupported bias dtypes use the mathematically equivalent tiled path.
+    # floating mask обязан совпадать по dtype с Q: SDPA-ядро отвергает
+    # смешанный dtype ("invalid dtype for bias"); bool-маски валидны как есть.
     mask = o.mask
-    if mask is not None and mask.dtype not in (torch.bool, torch.float32, q.dtype):
-        raise UnsupportedAttention("SDPA mask dtype: сохранить bias через math, без narrowing cast")
+    if mask is not None and mask.is_floating_point() and mask.dtype != q.dtype:
+        mask = mask.to(q.dtype)
     args = dict(attn_mask=mask,dropout_p=o.dropout_p,is_causal=o.causal)
     if o.softmax_scale is not None: args["scale"] = o.softmax_scale
     # Никакого принудительного FLASH_ATTENTION-only context.
     return F.scaled_dot_product_attention(q.transpose(1,2),k.transpose(1,2),v.transpose(1,2),**args).transpose(1,2).contiguous()
-
-
-def sdpa_tile_plan(q,k,workspace_bytes,query_chunk):
-    b,lq,h,_ = q.shape
-    lk = k.shape[1]
-    # Conservative logits/probabilities/bias allowance, not kernel accounting.
-    rows = max(1,min(lq,query_chunk,max(1,workspace_bytes//max(1,b*lk*16))))
-    heads = max(1,min(h,workspace_bytes//max(1,b*rows*lk*16)))
-    return dict(query_rows=rows,query_heads=heads,score_bytes=b*rows*heads*lk*4,
-        temporary_estimate_bytes=b*rows*heads*lk*16,workspace_limit_bytes=workspace_bytes,
-        minimum_tile_exceeds_budget=b*lk*16>workspace_bytes,
-        note="SDPA automatic dispatch; estimate excludes full inputs/output, KV tile and kernel workspace")
-
-
-def sdpa_attention_bounded(q,k,v,o,workspace_bytes,query_chunk=128):
-    """Exact dense attention in Q/head tiles. K length is never truncated.
-
-    Each tile carries its original query positions via bias_tile, so rectangular
-    causal, window and ALiBi semantics survive. No full expanded GQA KV copy.
-    Dropout is preserved (same distribution, not identical RNG consumption).
-    """
-    from dataclasses import replace
-    b,lq,h,d,lk,hk,dv = validate(q,k,v,o)
-    if o.return_attn_probs or o.deterministic:
-        raise UnsupportedAttention("SDPA tiled не гарантирует deterministic и не возвращает LSE/probabilities")
-    if o.mask is not None and o.mask.dtype not in (torch.bool,torch.float32,q.dtype):
-        raise UnsupportedAttention("SDPA tiled сохраняет FP32 mask; для другого dtype нужен math")
-    plan = sdpa_tile_plan(q,k,workspace_bytes,query_chunk)
-    out = torch.empty((b,lq,h,dv),device=q.device,dtype=q.dtype)
-    need_bias = o.mask is not None or o.causal or o.window_size != (-1,-1) or o.alibi_slopes is not None
-    full_mask = None if o.mask is None else torch.broadcast_to(o.mask,(b,h,lq,lk))
-    for i in range(0,h,plan["query_heads"]):
-        j = min(i+plan["query_heads"],h)
-        # A bounded KV tile, not Hq/Hkv copies of the entire sequence.
-        indices = torch.arange(i,j,device=k.device)//(h//hk)
-        ks,vs = k.index_select(2,indices),v.index_select(2,indices)
-        qs = q[:,:,i:j]
-        opts = replace(o,mask=None if full_mask is None else full_mask[:,i:j],
-            alibi_slopes=None if o.alibi_slopes is None else o.alibi_slopes[...,i:j])
-        for a in range(0,lq,plan["query_rows"]):
-            z = min(a+plan["query_rows"],lq)
-            bias = bias_tile(qs,ks,opts,a,z,0,lk) if need_bias else None
-            args = dict(attn_mask=bias,dropout_p=o.dropout_p,is_causal=False)
-            if o.softmax_scale is not None:args["scale"] = o.softmax_scale
-            out[:,a:z,i:j] = F.scaled_dot_product_attention(qs[:,a:z].transpose(1,2),
-                ks.transpose(1,2),vs.transpose(1,2),**args).transpose(1,2)
-            del bias
-        del ks,vs
-    return out

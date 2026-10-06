@@ -6,37 +6,39 @@ from torch import nn
 from torch.nn import functional as F
 
 
+def checkpoint_row_bounds(piece, tile_rows=256):
+    """Bounds of stored half weights, using bounded CPU tiles during loading."""
+    if piece.device.type != "cpu" or piece.ndim != 2:
+        raise ValueError("Weight bounds require a two-dimensional CPU checkpoint shard")
+    maximum, row_sum = 0., 0.
+    for start in range(0, piece.shape[0], tile_rows):
+        values = piece[start:start+tile_rows].to(torch.float16).float().abs()
+        maximum = max(maximum, float(values.max()))
+        row_sum = max(row_sum, float(values.sum(-1).max()))
+    return maximum, row_sum
+
+
+def matmul_constants(maximum, row_sum, in_features):
+    import math
+    sb = 2.**max(0, math.ceil(math.log2(max(1., maximum/16384.))))
+    # Half rounding/underflow cannot invalidate the absolute-sum bound.
+    bound = row_sum/sb*1.001+in_features*2.**-24
+    return sb, bound
+
+
 class Linear(nn.Linear):
     def reset_parameters(self):
         pass  # Только checkpoint loader; создание исключительно на meta.
 
     def forward(self, x):
         prepared = getattr(self, "_ps_prepared", None)
-        rows = getattr(self, "_ps_output_rows", 0)
-        if rows and self.out_features > rows:
-            # Bound weight conversion/scaling temporaries. FSDP still gathers
-            # this module once; tiles are ordinary GEMMs, never collectives.
-            safe = getattr(self, "_ps_safe", False)
-            out = torch.empty(x.shape[:-1]+(self.out_features,), device=x.device,
-                              dtype=torch.float32 if safe else self.weight.dtype)
-            for a in range(0, self.out_features, rows):
-                b = min(a+rows, self.out_features)
-                weight = self.weight[a:b]
-                bias = None if self.bias is None else self.bias[a:b]
-                if safe and not self._ps_fp32:
-                    from .fp16_safe import safe_linear
-                    out[...,a:b] = safe_linear(x, weight, bias)
-                elif safe:
-                    out[...,a:b] = F.linear(x.float(), weight.float(), None if bias is None else bias.float())
-                else:
-                    out[...,a:b] = F.linear(x.to(weight.dtype), weight, bias)
-        elif getattr(self, "_ps_safe", False):
+        if getattr(self, "_ps_safe", False):
             if self._ps_fp32:
                 out = F.linear(x.float(), self.weight.float(), None if self.bias is None else self.bias.float())
             else:
                 from .fp16_safe import safe_linear
                 if prepared is None:
-                    out = safe_linear(x, self.weight, self.bias)
+                    out = safe_linear(x, self.weight, self.bias, getattr(self, "_ps_weight_bounds", None))
                 else:
                     from .fp16_safe import prepared_matmul
                     out = prepared_matmul(x, prepared)
@@ -80,13 +82,13 @@ def regular_hadamard(size, device):
 
 
 def dequantize_rows(q, scales, convrot, group_size, dtype=torch.float16, check=True):
-    if q.shape[0] == 0:
-        return q.to(dtype)
+    if q.numel() == 0:
+        return q.to(dtype)  # empty trailing FSDP shard: reshape(0,-1,gs) is invalid
     w = q.float() * scales.float()
     if convrot:
         h = regular_hadamard(group_size, q.device)
         w = (w.reshape(w.shape[0], -1, group_size) @ h.T).reshape_as(w)
-    if check and (not torch.isfinite(w).all() or w.abs().max() > torch.finfo(dtype).max):
+    if check and w.numel() and (not torch.isfinite(w).all() or w.abs().max() > torch.finfo(dtype).max):
         raise FloatingPointError("INT8 dequantization выходит за диапазон FP16")
     return w.to(dtype)
 
@@ -161,9 +163,11 @@ def prepared_linears(modules, budget, enabled=True):
     scaled-half tiles. Не меняет FSDP representation и не вызывает collectives.
     """
     from .fp16_safe import prepare_matmul
-    size = sum(m.in_features*m.out_features*2 for m in modules)
-    staging = max((16*m.in_features*(min(m.rows,m.out_features) if isinstance(m,Int8Linear)
-                    else m.out_features) for m in modules),default=0)
+    bounded = [not isinstance(m, Int8Linear) and getattr(m, "_ps_weight_bounds", (None,))[0] == 1.
+               for m in modules]
+    size = sum(m.in_features*m.out_features*2 for m, reuse in zip(modules, bounded) if not reuse)
+    staging = max((0 if reuse else 16*m.in_features*(min(m.rows,m.out_features) if isinstance(m,Int8Linear)
+                    else m.out_features) for m, reuse in zip(modules, bounded)),default=0)
     use = enabled and size+staging <= budget and all(getattr(m,"_ps_safe",False) and not m._ps_fp32 for m in modules)
     info = dict(prepared_weight_bytes=size if use else 0, preparation_peak_estimate=size+staging if use else 0,
                 preparation="active MLP, reused across token chunks" if use else "per-call tiles; preparation budget insufficient or one chunk")
@@ -179,7 +183,7 @@ def prepared_linears(modules, budget, enabled=True):
                         del w
                     m._ps_prepared=tiles
                 else:
-                    m._ps_prepared=prepare_matmul(m.weight.T)
+                    m._ps_prepared=prepare_matmul(m.weight.T, getattr(m, "_ps_weight_bounds", None))
         yield info
     finally:
         for m in modules:
