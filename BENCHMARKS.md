@@ -1,21 +1,4 @@
-# Фактические результаты 0.5.0rc1, 2026-09-29
-
-Полный Python набор: **241 PASS**, 101.93 s; предыдущие audit regressions: **58 PASS**, 35.64 s. Это длительность тестов, **не скорость генерации**. Raw logs/XML: `reports/ram-min-2026-09-29/`. Дополнительный benchmark CLI test — отдельный `benchmark-cli.xml`.
-
-x86_64, Python 3.11.16, torch 2.12.0+cpu, glibc 2.39. CPU native H3/Qwen уменьшенной размерности и JS DOM harness; без CUDA GPU/POWER9/pretrained checkpoints.
-
-| Измерение RAM-профиля | Статус |
-|---|---|
-| Полная H3 generation, качество PNG/audio | NOT_RUN |
-| Peak VRAM каждого rank, CPU PSS реального H3/Qwen32B | NOT_RUN |
-| FSDP/NCCL/CPUOffloadPolicy на GPU | NOT_RUN |
-| Скорость/collectives 3 против 5/all GPU | NOT_RUN |
-| POWER9/V100 NVLink pinned/pageable и ATS direct kernel | NOT_RUN_ON_AC922 |
-| Пользовательский vllm_flash_attn CUDA wheel | NOT_RUN_ON_AC922 |
-
-Исходные пользовательские успешные запуски сохраняют статус USER_REPORTED. Новые измерения не выдумываются. Для реального сравнения `scripts/benchmark_cases.py --axis memory`; команды и условия — [RAM/ATS/UI](docs/RAM_ATS_UI_RU.md#приёмка-и-сравнение-на-ac922).
-
----
+> Историческая документация до 0.5.0. Старые UI/CLI аргументы и результаты не относятся к текущей ревизии. Актуальные команды: [README_RU.md](README_RU.md), результаты: [AUDIT_REVIEW_2026-10-04.md](AUDIT_REVIEW_2026-10-04.md).
 
 # Фактические проверки 0.4.0
 

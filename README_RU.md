@@ -1,66 +1,93 @@
-# ComfyUI-PowerShard
+# ComfyUI-PowerShard 0.5.3
 
-**Распределённый MiniMax H3 в обычном графе ComfyUI.** PowerShard запускает одну генерацию на выбранных CUDA GPU. FSDP2 шардирует веса генератора, а родные H3 conditioning, sampler и video/audio VAE остаются частью workflow. Для V100 предусмотрен FP16-safe путь; INT8 ConvRot не разворачивается заранее в постоянную FP16-копию.
+MiniMax H3 в ComfyUI с FSDP2 sequence sharding, выбором любого непустого CUDA-visible набора GPU и отдельными MLP-нодами. Основной профиль: IBM AC922, POWER9 ppc64le, 6×V100 16 GB, 128 GB RAM, Ubuntu 20.04.5, существующие custom PyTorch 2.12 / CUDA 12.4 / FA2.
 
-[English](README.md) · [Совместимость](COMPATIBILITY.md) · [Результаты проверок](BENCHMARKS.md)
+`keep_in_memory` теперь сохраняет веса **в RAM между задачами для всех трёх placements**. Для GPU/ATS сохраняются только локальные шарды, FSDP graph удаляется; следующая задача восстанавливает его из RAM без чтения весов checkpoint. FP32 sequence wire возвращён по умолчанию как путь исторического SDPA baseline; normalized FP16 доступен явно. Добавлены prefetch policy, объяснение auto-снижения и wall timers. MLP off/manual больше не опрашивает allocator в каждом блоке. **CUDA/NCCL, освобождение физической VRAM, скорость и ATS на AC922 здесь не проверены. Возврат 45 секунд не заявляется.** Разбор и команды: [PERFORMANCE_FIX_0_5_3_RU.md](PERFORMANCE_FIX_0_5_3_RU.md). Исправления Qwen/FA/cancel из [0.5.2](FIXES_0_5_2_RU.md) сохранены.
 
-## Возможности
+## Установка обновления
 
-| Область | Реализация |
+Сохраните прежнюю папку custom node, распакуйте папку `ComfyUI-PowerShard` в `ComfyUI/custom_nodes`, затем перезапустите ComfyUI и обновите страницу браузера. Не держите две копии custom node одновременно внутри `custom_nodes`. Ваши модели и output находятся в ComfyUI и в архив не включены.
+
+Используйте существующее окружение ComfyUI. Этот пакет не устанавливает и не заменяет torch, CUDA, NCCL или custom FA2. Обновление всего `requirements.txt` ComfyUI для установки этой ноды не требуется. Проверка окружения: `python scripts/diagnose.py`. При необходимости анализа зависимостей: `python scripts/dependency_plan.py` выполняет только dry-run с защитой установленного torch.
+
+## Ноды
+
+| Нода | Рабочие параметры |
 |---|---|
-| Выбор GPU | Любое непустое подмножество видимых CUDA устройств: `0`, `1,3,5`, `5,2,0` или `all`. Порядок сохраняется. |
-| Шардирование H3 | По одному worker на GPU; FSDP2 FULL_SHARD собирает параметры активных блоков и снова шардирует их после forward. На одной GPU меж-GPU шардирования нет. |
-| MiniMax H3 | FL2VA и Ref2VA Pruned, BF16 checkpoint с FP16 runtime path и INT8 ConvRot. Worker-side FP16 Safe оставляет опасные участки в FP32. |
-| Attention | `auto`, PyTorch SDPA, FlashAttention, пользовательский `vllm_flash_attn`, SageAttention и reference/math. Недоступный provider даёт объяснимый fallback при `allow_fallback=true`. |
-| Распределение вычислений | Отдельный `fsdp2_sequence` делит token/query работу; обычный `fsdp2` прежде всего экономит память весов. |
-| Qwen3-VL-32B CLIP | Нода для H3 text/vision conditioning с FP16/INT8, распределённым размещением, CPU offload и ограниченным RAM-кэшем. |
-| Память | CPU offload локальных FSDP-шардов, управляемый prefetch и профиль `ram_min` для агрессивной выгрузки весов в RAM. Он может быть медленнее. |
+| PowerShardConfig | `gpu_ids`, `weight_placement`, `precision`, `attention_backend`, `sequence_mode` |
+| PowerShardConfigTuning, optional | reserve GiB, prefetch 0/1/2, NUMA, strict attention, host wrappers, pin memory; sequence wire FP32/FP16, prefetch auto/manual |
+| PowerShardH3Loader | checkpoint, config, `keep_in_memory` (по умолчанию true) |
+| PowerShardH3FP16Patcher | FP16 Safe и глубокая диагностика finite |
+| PowerShardH3MLP | MODEL → MODEL; `off / auto / manual`, default off, размер chunk |
+| PowerShardQwenMLP | CLIP → CLIP; `off / auto / manual`, default off, размер chunk |
+| PowerShardH3QwenLoader | checkpoint, config, precision, idle policy, размер CPU conditioning cache |
 
-Пакет **не заменяет** ComfyUI, CUDA, PyTorch, NCCL или установленный пользовательский wheel. Опциональные attention-библиотеки загружаются по необходимости. Веса моделей не входят в репозиторий.
+Режим `fsdp2` убран из UI: используется `fsdp2_sequence`. `timeout_s` и `allow_unverified` удалены из UI и экспортируемого config. У RPC/генерации нет пользовательского таймаута; отмена ComfyUI и завершение worker продолжают обрабатываться. Технические пределы изолированных compatibility probes и остановки subprocess не являются временем генерации. NCCL API сохраняет внутренний watchdog на 365 дней.
 
-## Быстрый старт
+`gpu_ids=all` выбирает все GPU, видимые **процессу ComfyUI**. `5,2,0` выбирает ровно такой порядок ranks. Индексы соответствуют CUDA_VISIBLE_DEVICES; UUID также разрешены.
 
-Используйте Python установленной ComfyUI и сохраните копию существующей ноды перед обновлением. Поместите проект в `ComfyUI/custom_nodes/ComfyUI-PowerShard`. Проверьте окружение и план зависимостей до установки:
+## Удержание и отмена
+
+`keep_in_memory=true` в H3 Loader сохраняет здоровые workers между задачами. После sampling выполняются end_run и idle: conditioning/Spectrum history и неактивный VRAM-кэш освобождаются. При `cpu` CPUOffloadPolicy продолжает владеть RAM-шардами; при `gpu/ats` локальные shards/buffers копируются в CPU cache, FSDP graph и его ATS pool удаляются. Следующая задача восстанавливает активный placement из этого RAM cache. Это перенос один раз между runs, не на каждом шаге. Qwen `keep` действует аналогично; `cpu_shards` пока требует CPU placement. Конфигурация Loader имеет приоритет над legacy `keep_workers`. При смене checkpoint/config/patch/provider перезагрузка ожидаема; одинаковый запрос переиспользует владельца весов.
+
+Отмена retained RPC возвращается сразу, но уже запущенный forward безопасно заканчивается в фоне без следующих шагов. Следующая GPU-задача ждёт этого завершения; статус показывает draining. CUDA/NCCL/transport error закрывает повреждённые workers. Отмена во время первоначальной загрузки не сохраняет незавершённую модель. Зависший kernel/collective не даёт гарантии завершения drain; принудительная остановка ComfyUI освобождает workers и RAM.
+
+`PowerShardRelease` перед VAE по умолчанию сохраняет удерживаемые H3/Qwen веса в RAM, включая активные GPU/ATS модели. Чтобы освободить и RAM, выключите соответствующий preserve-флаг. Private FSDP offload policy не меняется на лету: используется CPU-only cache локальных shards и реконструкция graph. CUDA/NCCL context (и маленькие buffers при CPUOffloadPolicy) могут занимать VRAM: ноль по nvidia-smi не обещается. История rank RPC сохраняется при idle, поэтому логи можно получить без закрытия RAM-владельца.
+
+## Три режима памяти
+
+| weight_placement | Постоянные веса | Вычисления и активный блок |
+|---|---|---|
+| `gpu` | Локальные FSDP shards в VRAM выбранных карт | GPU; FSDP собирает нужную группу весов |
+| `cpu` | Локальные shards в RAM, pinned по умолчанию | GPU; CPUOffloadPolicy переносит активные группы |
+| `ats` | CUDA Managed Memory shards, CPU preferred; аппаратный ATS обязателен | GPU; active FSDP groups и activations используют обычную VRAM |
+
+В каждом режиме распределены shards одной модели: полная H3 не создаётся в каждом worker. `cpu` означает хранение весов в RAM и вычисления на GPU. ATS выделяет настоящую managed memory через отдельный scoped pool; это экспериментальный путь, проверяющий поддержку драйвера **до** тяжёлой загрузки. Обычная UVA не считается доказательством ATS.
+
+Для ATS автоматически выбирается native CUDA allocator только в отдельных ATS workers, поскольку scoped MemPool несовместим с cudaMallocAsync/expandable_segments. Настройки allocator основного процесса ComfyUI сохраняются. Нужен доступный `c++`/`g++`; маленький allocator компилируется без nvcc и CUDA headers. Отсутствие ATS вызывает явную ошибку, без подмены CPU offload.
+
+ATS расширяет возможность хранить **веса** за счёт RAM. Активный блок, attention и video activations всё ещё должны помещаться в VRAM. Значение torch allocated для managed memory является логическим размером, а не физической резидентностью страниц. Резерв и память MLP — оценки; они не дают гарантии отсутствия OOM.
+
+Таблица выше описывает активный sampling; при keep=true между задачами во всех режимах веса находятся в RAM. ATS не обещает более низкий NVML usage или ускорение. Token/Ulysses меняют attention exchange, а не количество локальных FSDP весов, поэтому одинаковое потребление памяти само по себе нормально. `prefetch_policy=auto` может снизить 1/2 до 0; смотрите событие `powershard_prefetch`, requested/effective и причину в UI. Для явного A/B существует `manual`, но он может дать OOM.
+
+## Ulysses и численная устойчивость
+
+H3 `sequence_mode=ulysses` поддерживает 3, 4, 5, 6 и другие размеры GPU-набора: heads дополняются нулевыми до кратности world, token padding убирается до softmax, фиктивные heads удаляются после обратного обмена. Token-режим собирает K/V. Qwen text использует свой token sequence path, vision вычисляется реплицированно; переключатель Ulysses относится к H3.
+
+FP16 Safe включён по умолчанию в H3 Loader. Linear GEMM масштабируется, condition/norm/SiLU/residual сохраняют FP32. Default sequence exchange снова FP32; attention/GEMM остаётся FP16 Safe. При явном `sequence_comm_dtype=fp16` QKV/output нормализуются **до** half exchange, с дополнительным global V MAX на каждом block; большой V никогда не сужается без нормализации. Итоговый residual gather остаётся FP32. Wire dtype доступен в Advanced и Python/API. Chunking MLP управляется независимо от FP16 Safe.
+
+`auto` проверяет vllm_flash_attn, flash_attn, SDPA, math по порядку на каждой карте; это выбор совместимости, не скорости. Для H3 Ulysses проверяются полное число heads и `ceil(heads/world)`; ошибка импорта `flash_attn_2_cuda` означает, что запрошенный интерфейс недоступен данному Python. При разрешённом fallback flash_attn также проверяет vllm_flash_attn перед SDPA. Strict attention запрещает подмену провайдера. Кнопка «GPU / attention / память» показывает реальные вызовы по группам и память ranks. CUDA/OOM ошибки завершают session и не повторяют блок на повреждённом context. Triton/torch.compile непосредственно не вызываются этой нодой.
+
+Когда токенов слишком мало для непустого torch.chunk на всех ranks, проход явно использует реплицированные вычисления с FSDP sharding. Набор GPU не сокращается; это отражено в `duplicated_compute` и warning. Для нормальных video sequences доступен полный sequence path.
+
+## Workflows и миграция
+
+`workflows/ac922_6gpu_{gpu,cpu,ats}_{token,ulysses}.ui.json` — шесть стартовых UI-графов; рядом API-версии. В них INT8 H3/Qwen, FP16 Safe, MLP off, H3 keep=true, NUMA auto, prefetch=0, 512×512, 25 кадров, 8 steps, Qwen release перед H3. Выберите существующие checkpoint/VAE файлы и свой prompt. Для длинных sequences полный MLP может дать OOM: auto/manual включается явно в отдельной ноде. GPU performance/качество этих графов здесь не измерены.
+
+Старые UI workflows известных форматов мигрируют при загрузке страницы через ComfyUI endpoint. Старые MLP-настройки переносятся в отдельные ноды, reserve/offload/NUMA — в актуальные controls. Для файлов и API:
 
 ```bash
-python scripts/diagnose.py --comfy /ABS/ComfyUI --output reports/local-environment.json
-python scripts/check_source_requirements.py
-python scripts/dependency_plan.py --output-dir reports/local-dependency-plan
+python scripts/migrate_workflow.py old.ui.json new.ui.json
+python scripts/migrate_workflow.py old.api.json new.api.json
 ```
 
-При необходимости установите только недостающие runtime-зависимости через существующий Python. Не обновляйте torch или пользовательский CUDA wheel автоматически. Инструкции для [ppc64le](docs/INSTALL_PPC64LE.md) и [x86_64](docs/INSTALL_X86_64.md).
+Неизвестный позиционный layout или старые связанные advanced widgets требуют named API export либо ручного обновления. Прямой POST старого API graph в `/prompt` обходится без frontend migration: предварительно используйте CLI. `scripts/run_api_workflow.py` мигрирует named API автоматически.
 
-Запуск из каталога PowerShard:
+## Проверка на сервере
+
+Команды выполняются в Python вашей ComfyUI, из этой папки; замените пути checkpoint на свои.
 
 ```bash
-bash scripts/launch_comfy.sh /ABS/venv/bin/python /ABS/ComfyUI
+python scripts/probe_h3_cuda.py --comfy /opt/ComfyUI --gpus 0,1,2 --sequence-mode ulysses --weight-placement cpu --output reports/local-3gpu-cpu-ulysses.json
+python scripts/probe_h3_cuda.py --comfy /opt/ComfyUI --gpus 0,1,2,3 --sequence-mode ulysses --weight-placement gpu --output reports/local-4gpu-gpu-ulysses.json
+python scripts/probe_h3_cuda.py --comfy /opt/ComfyUI --gpus 0,1,2,3,4 --sequence-mode ulysses --weight-placement cpu --output reports/local-5gpu-cpu-ulysses.json
+python scripts/probe_h3_cuda.py --comfy /opt/ComfyUI --gpus all --sequence-mode ulysses --weight-placement ats --output reports/local-6gpu-ats-ulysses.json
+python scripts/accept_h3.py --comfy /opt/ComfyUI --checkpoint /path/to/H3.safetensors --profile profiles/ac922-v100.json --gpus all --weight-placement cpu --sequence-mode ulysses --debug-finite --lifecycle --output reports/local-real-h3-cpu-ulysses
+python tests/audit_memory.py /path/to/H3.safetensors --comfy /opt/ComfyUI --sets 3 4 5 6 --placement cpu --sequence-mode ulysses --forward
 ```
 
-Откройте **`workflows/fl2va_ram_min_int8.ui.json`** для профиля «Минимум VRAM» либо **`workflows/fl2va_fp16.ui.json`** для базового FP16. Выберите локальные H3/Qwen/VAE checkpoints и свои GPU в Distributed Config. `0,1,2` в примерах — обычный список, не ограничение проекта. MODEL проходит через **PowerShard MiniMax H3 FP16 Patcher** к родному guider/sampler.
+Tiny probe проверяет FP16/INT8 FSDP2, 7 heads, неравномерные токены, пять последовательных forwards, high-range conditioning, native audio/video output и сохранение managed pointers для ATS. Он не проверяет качество настоящего checkpoint. Повторите пары token/Ulysses и cpu/gpu/ats с одинаковыми inputs; `scripts/compare_runs.py` сравнивает latents только при совпадении seed, input hash и checkpoint header hash.
 
-До загрузки больших весов проверьте CUDA/NCCL на выбранных картах:
+При повторном NaN включите `POWERSHARD_DEBUG_FINITE=1` и сохраните output/powershard rank logs. При OOM смотрите worker CUDA peak, driver memory по UUID, CPU RSS и largest active group. `tests/audit_memory.py` теперь действительно запускает workers до load-only замера и читает их статистику.
 
-```bash
-python scripts/probe_devices.py --gpus 0,1,2 --attention-backend sdpa --reports reports/local-probe
-```
-
-[Checkpoints](models/CHECKPOINTS_RU.md) · [Другие workflows](workflows/) · [RAM/ATS/UI: команды и настройки](docs/RAM_ATS_UI_RU.md)
-
-## Статус проверки
-
-Версия **0.5.0rc1**: локально на Linux x86_64 / Python 3.11.16 / torch 2.12.0+cpu прошли 241 основной тест, 58 регрессий аудита и отдельный benchmark CLI тест. Это проверки CPU-контрактов, native H3/Qwen малой размерности, интерфейса и математики; они **не доказывают** работу CUDA/FSDP на V100.
-
-Пользователь сообщил об успешных запусках прежней серверной версии на AC922 с тремя V100: `fsdp2` и `fsdp2_sequence` с vllm-FA, FA и SDPA. Новый профиль `ram_min`, Qwen32B, Spectrum, пользовательский wheel и реальные VRAM/скорость **не проверены нами на AC922**. Полная pretrained H3 генерация этим выпуском здесь **NOT_RUN**. Измеренного ускорения или гарантии отсутствия OOM нет.
-
-Точные статусы: [отчёт 0.5.0rc1](reports/ram-min-2026-09-29/REPORT_RU.md), [benchmark](BENCHMARKS.md), [ограничения](KNOWN_LIMITATIONS.md). Spectrum — отдельный экспериментальный режим с приближением; ATS allocator для модели пока не реализован.
-
-## Документация
-
-- [Устройство backend и FSDP](ARCHITECTURE.md)
-- [Совместимость ComfyUI и режимов](COMPATIBILITY.md)
-- [GPU, attention и пользовательский vllm wheel](docs/MULTIGPU_ATTENTION.md)
-- [Память, ATS, интерфейс, скорость и качество](docs/RAM_ATS_UI_RU.md)
-- [FP16 Safe](docs/FP16_SAFE.md)
-- [История прежних выпусков и подробные команды](README_HISTORY_RU.md)
-
-Лицензия проекта: [GPL-3.0](LICENSE). Лицензии сторонних компонентов сохранены в [licenses](licenses/).
+Команды исследования производительности и приоритеты доработок находятся в [PERFORMANCE_FIX_0_5_1.md](PERFORMANCE_FIX_0_5_1.md).
