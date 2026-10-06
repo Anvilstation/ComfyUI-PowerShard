@@ -7,17 +7,14 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
 p=argparse.ArgumentParser()
 p.add_argument('--comfy',required=True);p.add_argument('--checkpoint',required=True)
-p.add_argument('--gpus',default='0,1,2');p.add_argument('--precision',choices=['fp16','int8_fp16'],default='int8_fp16')
-p.add_argument('--backend',choices=['fsdp2','fsdp2_sequence'],default='fsdp2')
-p.add_argument('--attention-backend',default='sdpa');p.add_argument('--cpu-offload',action='store_true')
+p.add_argument('--gpus',default='all');p.add_argument('--precision',choices=['fp16','int8_fp16'],default='int8_fp16')
+p.add_argument('--weight-placement',choices=['gpu','cpu','ats'],default='gpu')
+p.add_argument('--attention-backend',default='auto')
 p.add_argument('--idle-policy',choices=['release','cpu_shards','keep'],default='release')
 p.add_argument('--prefetch-blocks',type=int,choices=[0,1,2],default=0);p.add_argument('--numa-policy',choices=['none','auto','bind'],default='none')
 p.add_argument('--prompt',default='Волны у каменного берега. Слышен шум моря.');p.add_argument('--image')
 p.add_argument('--reference',help='safetensors с ключами cond и tags, полученный native encoder на тех же inputs')
 p.add_argument('--rtol',type=float,default=.025);p.add_argument('--atol',type=float,default=.006)
-p.add_argument('--memory-profile',choices=['custom','ram_min'],default='custom')
-p.add_argument('--workspace-mib',type=int,default=256)
-p.add_argument('--stage-cache-mib',type=int,default=64)
 p.add_argument('--output',default='reports/local-qwen');a=p.parse_args()
 out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
 import torch
@@ -32,8 +29,8 @@ from powershard.qwen import QwenConfig
 from powershard.qwen_adapter import load_qwen
 from powershard.conditioning_cache import content_hash
 from safetensors.torch import save_file,load_file
-cfg=DistributedConfig(tuple(a.gpus.split(',')),backend=a.backend,precision=a.precision,attention_backend=a.attention_backend,
-    cpu_offload=a.cpu_offload,prefetch_blocks=a.prefetch_blocks,numa_policy=a.numa_policy,memory_policy='auto',memory_profile=a.memory_profile,workspace_mib=a.workspace_mib,stage_cache_mib=a.stage_cache_mib)
+cfg=DistributedConfig(tuple(a.gpus.split(',')),weight_placement=a.weight_placement,precision=a.precision,attention_backend=a.attention_backend,
+    prefetch_blocks=a.prefetch_blocks,numa_policy=a.numa_policy,memory_policy='auto')
 clip=load_qwen(a.checkpoint,cfg,QwenConfig(a.idle_policy),report_dir=out)
 images=[]
 if a.image:

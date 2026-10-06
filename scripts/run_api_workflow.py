@@ -4,10 +4,10 @@ import argparse,json,time,urllib.request,urllib.parse,sys
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from powershard.reporting import redact
-p=argparse.ArgumentParser();p.add_argument('workflow');p.add_argument('--server',default='http://127.0.0.1:8188');p.add_argument('--submit',action='store_true');p.add_argument('--allow-unverified',action='store_true');p.add_argument('--seed',type=int);p.add_argument('--steps',type=int);p.add_argument('--timeout',type=int,default=7200);p.add_argument('--output',default='reports/local-workflow.json');a=p.parse_args()
-graph=json.loads(Path(a.workflow).read_text())
+p=argparse.ArgumentParser();p.add_argument('workflow');p.add_argument('--server',default='http://127.0.0.1:8188');p.add_argument('--submit',action='store_true');p.add_argument('--seed',type=int);p.add_argument('--steps',type=int);p.add_argument('--output',default='reports/local-workflow.json');a=p.parse_args()
+from powershard.workflow_migration import migrate_api
+graph,migrations=migrate_api(json.loads(Path(a.workflow).read_text()))
 for n in graph.values():
- if n['class_type']=='PowerShardConfig' and a.allow_unverified:n['inputs']['allow_unverified']=True
  if n['class_type']=='RandomNoise' and a.seed is not None:n['inputs']['noise_seed']=a.seed
  if n['class_type']=='BasicScheduler' and a.steps is not None:n['inputs']['steps']=a.steps
 print(json.dumps({'server':a.server,'workflow':a.workflow,'submit':a.submit,'seed':a.seed,'steps':a.steps},indent=2))
@@ -17,8 +17,8 @@ request=urllib.request.Request(url+'/prompt',data=json.dumps({'prompt':graph}).e
 start=time.perf_counter()
 with urllib.request.urlopen(request,timeout=60) as r:reply=json.load(r)
 if reply.get('node_errors'):raise RuntimeError(reply['node_errors'])
-id=reply['prompt_id'];deadline=time.monotonic()+a.timeout
-while time.monotonic()<deadline:
+id=reply['prompt_id'];print('prompt_id:',id,flush=True)
+while True:
  with urllib.request.urlopen(url+'/history/'+urllib.parse.quote(id),timeout=60) as r:history=json.load(r)
  if id in history:
   item=history[id]
@@ -28,4 +28,3 @@ while time.monotonic()<deadline:
   if item.get('status',{}).get('status_str')!='success':raise SystemExit(1)
   break
  time.sleep(1)
-else:raise SystemExit('Timeout ожидания. Запрос не отменён автоматически, чтобы не затронуть чужую очередь; проверьте ComfyUI.')
