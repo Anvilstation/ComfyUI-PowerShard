@@ -1,5 +1,5 @@
 {
-  "last_node_id": 23,
+  "last_node_id": 25,
   "last_link_id": 24,
   "nodes": [
     {
@@ -22,8 +22,7 @@
           "name": "POWERSHARD_CONFIG",
           "type": "POWERSHARD_CONFIG",
           "links": [
-            1,
-            4
+            24
           ],
           "slot_index": 0
         }
@@ -35,9 +34,9 @@
       "widgets_values": [
         "all",
         "gpu",
-        "fp16",
+        "int8_fp16",
         "auto",
-        "token"
+        "ulysses"
       ]
     },
     {
@@ -76,7 +75,7 @@
         "powershard_schema": 7
       },
       "widgets_values": [
-        "minimax_h3_fl2va_pruned_bf16.safetensors",
+        "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
         true
       ]
     },
@@ -146,8 +145,8 @@
           "name": "MODEL",
           "type": "MODEL",
           "links": [
-            8,
-            10
+            7,
+            9
           ],
           "slot_index": 0
         }
@@ -224,7 +223,7 @@
           "type": "VAE",
           "links": [
             6,
-            19
+            18
           ],
           "slot_index": 0
         }
@@ -257,7 +256,7 @@
           "name": "VAE",
           "type": "VAE",
           "links": [
-            21
+            20
           ],
           "slot_index": 0
         }
@@ -294,11 +293,6 @@
           "name": "vae",
           "type": "VAE",
           "link": 6
-        },
-        {
-          "name": "first_frame",
-          "type": "IMAGE",
-          "link": 7
         }
       ],
       "outputs": [
@@ -306,7 +300,7 @@
           "name": "CONDITIONING",
           "type": "CONDITIONING",
           "links": [
-            9
+            8
           ],
           "slot_index": 0
         },
@@ -314,7 +308,7 @@
           "name": "LATENT",
           "type": "LATENT",
           "links": [
-            15
+            14
           ],
           "slot_index": 1
         }
@@ -325,9 +319,9 @@
       },
       "widgets_values": [
         "Волны у каменного берега. Камера неподвижна. Слышен шум моря.",
-        768,
-        768,
-        5
+        512,
+        512,
+        25
       ]
     },
     {
@@ -348,12 +342,12 @@
         {
           "name": "model",
           "type": "MODEL",
-          "link": 8
+          "link": 7
         },
         {
           "name": "conditioning",
           "type": "CONDITIONING",
-          "link": 9
+          "link": 8
         }
       ],
       "outputs": [
@@ -361,7 +355,7 @@
           "name": "GUIDER",
           "type": "GUIDER",
           "links": [
-            12
+            11
           ],
           "slot_index": 0
         }
@@ -392,7 +386,7 @@
           "name": "NOISE",
           "type": "NOISE",
           "links": [
-            11
+            10
           ],
           "slot_index": 0
         }
@@ -426,7 +420,7 @@
           "name": "SAMPLER",
           "type": "SAMPLER",
           "links": [
-            13
+            12
           ],
           "slot_index": 0
         }
@@ -457,7 +451,7 @@
         {
           "name": "model",
           "type": "MODEL",
-          "link": 10
+          "link": 9
         }
       ],
       "outputs": [
@@ -465,7 +459,7 @@
           "name": "SIGMAS",
           "type": "SIGMAS",
           "links": [
-            14
+            13
           ],
           "slot_index": 0
         }
@@ -476,7 +470,7 @@
       },
       "widgets_values": [
         "simple",
-        20,
+        8,
         1.0
       ]
     },
@@ -498,27 +492,27 @@
         {
           "name": "noise",
           "type": "NOISE",
-          "link": 11
+          "link": 10
         },
         {
           "name": "guider",
           "type": "GUIDER",
-          "link": 12
+          "link": 11
         },
         {
           "name": "sampler",
           "type": "SAMPLER",
-          "link": 13
+          "link": 12
         },
         {
           "name": "sigmas",
           "type": "SIGMAS",
-          "link": 14
+          "link": 13
         },
         {
           "name": "latent_image",
           "type": "LATENT",
-          "link": 15
+          "link": 14
         }
       ],
       "outputs": [
@@ -526,7 +520,7 @@
           "name": "LATENT",
           "type": "LATENT",
           "links": [
-            16
+            15
           ],
           "slot_index": 0
         },
@@ -561,7 +555,7 @@
         {
           "name": "samples",
           "type": "LATENT",
-          "link": 16
+          "link": 15
         }
       ],
       "outputs": [
@@ -569,7 +563,7 @@
           "name": "LATENT",
           "type": "LATENT",
           "links": [
-            17
+            16
           ],
           "slot_index": 0
         },
@@ -608,7 +602,7 @@
         {
           "name": "av_latent",
           "type": "LATENT",
-          "link": 17
+          "link": 16
         }
       ],
       "outputs": [
@@ -616,7 +610,7 @@
           "name": "LATENT",
           "type": "LATENT",
           "links": [
-            18
+            17
           ],
           "slot_index": 0
         },
@@ -624,7 +618,7 @@
           "name": "LATENT",
           "type": "LATENT",
           "links": [
-            20
+            19
           ],
           "slot_index": 1
         }
@@ -653,12 +647,12 @@
         {
           "name": "samples",
           "type": "LATENT",
-          "link": 18
+          "link": 17
         },
         {
           "name": "vae",
           "type": "VAE",
-          "link": 19
+          "link": 18
         }
       ],
       "outputs": [
@@ -666,7 +660,7 @@
           "name": "IMAGE",
           "type": "IMAGE",
           "links": [
-            22
+            21
           ],
           "slot_index": 0
         }
@@ -700,12 +694,12 @@
         {
           "name": "samples",
           "type": "LATENT",
-          "link": 20
+          "link": 19
         },
         {
           "name": "vae",
           "type": "VAE",
-          "link": 21
+          "link": 20
         }
       ],
       "outputs": [
@@ -713,7 +707,7 @@
           "name": "AUDIO",
           "type": "AUDIO",
           "links": [
-            23
+            22
           ],
           "slot_index": 0
         }
@@ -742,12 +736,12 @@
         {
           "name": "images",
           "type": "IMAGE",
-          "link": 22
+          "link": 21
         },
         {
           "name": "audio",
           "type": "AUDIO",
-          "link": 23
+          "link": 22
         }
       ],
       "outputs": [
@@ -755,7 +749,7 @@
           "name": "VIDEO",
           "type": "VIDEO",
           "links": [
-            24
+            23
           ],
           "slot_index": 0
         }
@@ -786,7 +780,7 @@
         {
           "name": "video",
           "type": "VIDEO",
-          "link": 24
+          "link": 23
         }
       ],
       "outputs": [],
@@ -795,14 +789,14 @@
         "powershard_schema": 7
       },
       "widgets_values": [
-        "video/PowerShard_H3",
+        "video/ac922_6gpu_gpu_ulysses",
         "auto",
         "auto"
       ]
     },
     {
-      "id": 18,
-      "type": "LoadImage",
+      "id": 25,
+      "type": "PowerShardConfigTuning",
       "pos": [
         1200,
         1040
@@ -814,37 +808,44 @@
       "flags": {},
       "order": 19,
       "mode": 0,
-      "inputs": [],
+      "inputs": [
+        {
+          "name": "config",
+          "type": "POWERSHARD_CONFIG",
+          "link": 24
+        }
+      ],
       "outputs": [
         {
-          "name": "IMAGE",
-          "type": "IMAGE",
+          "name": "POWERSHARD_CONFIG",
+          "type": "POWERSHARD_CONFIG",
           "links": [
-            7
+            1,
+            4
           ],
           "slot_index": 0
-        },
-        {
-          "name": "MASK",
-          "type": "MASK",
-          "links": [],
-          "slot_index": 1
         }
       ],
       "properties": {
-        "Node name for S&R": "LoadImage",
+        "Node name for S&R": "PowerShardConfigTuning",
         "powershard_schema": 7
       },
       "widgets_values": [
-        "reference.png",
-        "image"
+        2.0,
+        0,
+        "auto",
+        false,
+        false,
+        true,
+        "fp32",
+        "auto"
       ]
     }
   ],
   "links": [
     [
       1,
-      1,
+      25,
       0,
       2,
       0,
@@ -868,7 +869,7 @@
     ],
     [
       4,
-      1,
+      25,
       0,
       3,
       0,
@@ -892,14 +893,6 @@
     ],
     [
       7,
-      18,
-      0,
-      6,
-      2,
-      "IMAGE"
-    ],
-    [
-      8,
       23,
       0,
       7,
@@ -907,7 +900,7 @@
       "MODEL"
     ],
     [
-      9,
+      8,
       6,
       0,
       7,
@@ -915,7 +908,7 @@
       "CONDITIONING"
     ],
     [
-      10,
+      9,
       23,
       0,
       10,
@@ -923,7 +916,7 @@
       "MODEL"
     ],
     [
-      11,
+      10,
       8,
       0,
       11,
@@ -931,7 +924,7 @@
       "NOISE"
     ],
     [
-      12,
+      11,
       7,
       0,
       11,
@@ -939,7 +932,7 @@
       "GUIDER"
     ],
     [
-      13,
+      12,
       9,
       0,
       11,
@@ -947,7 +940,7 @@
       "SAMPLER"
     ],
     [
-      14,
+      13,
       10,
       0,
       11,
@@ -955,7 +948,7 @@
       "SIGMAS"
     ],
     [
-      15,
+      14,
       6,
       1,
       11,
@@ -963,7 +956,7 @@
       "LATENT"
     ],
     [
-      16,
+      15,
       11,
       0,
       12,
@@ -971,7 +964,7 @@
       "LATENT"
     ],
     [
-      17,
+      16,
       12,
       0,
       13,
@@ -979,7 +972,7 @@
       "LATENT"
     ],
     [
-      18,
+      17,
       13,
       0,
       14,
@@ -987,7 +980,7 @@
       "LATENT"
     ],
     [
-      19,
+      18,
       4,
       0,
       14,
@@ -995,7 +988,7 @@
       "VAE"
     ],
     [
-      20,
+      19,
       13,
       1,
       15,
@@ -1003,7 +996,7 @@
       "LATENT"
     ],
     [
-      21,
+      20,
       5,
       0,
       15,
@@ -1011,7 +1004,7 @@
       "VAE"
     ],
     [
-      22,
+      21,
       14,
       0,
       16,
@@ -1019,7 +1012,7 @@
       "IMAGE"
     ],
     [
-      23,
+      22,
       15,
       0,
       16,
@@ -1027,12 +1020,20 @@
       "AUDIO"
     ],
     [
-      24,
+      23,
       16,
       0,
       17,
       0,
       "VIDEO"
+    ],
+    [
+      24,
+      1,
+      0,
+      25,
+      0,
+      "POWERSHARD_CONFIG"
     ]
   ],
   "groups": [],

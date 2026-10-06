@@ -2,11 +2,11 @@
   "1": {
     "class_type": "PowerShardConfig",
     "inputs": {
-      "gpu_ids": "5,2,0",
+      "gpu_ids": "all",
       "weight_placement": "gpu",
       "precision": "int8_fp16",
-      "attention_backend": "math",
-      "sequence_mode": "token"
+      "attention_backend": "auto",
+      "sequence_mode": "ulysses"
     }
   },
   "2": {
@@ -14,7 +14,7 @@
     "inputs": {
       "checkpoint": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
       "config": [
-        "1",
+        "25",
         0
       ],
       "keep_in_memory": true
@@ -47,7 +47,7 @@
     "inputs": {
       "checkpoint": "qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
       "config": [
-        "1",
+        "25",
         0
       ],
       "precision": "int8_fp16",
@@ -79,9 +79,9 @@
         0
       ],
       "prompt": "Волны у каменного берега. Камера неподвижна. Слышен шум моря.",
-      "width": 768,
-      "height": 768,
-      "length": 5
+      "width": 512,
+      "height": 512,
+      "length": 25
     }
   },
   "7": {
@@ -117,7 +117,7 @@
         0
       ],
       "scheduler": "simple",
-      "steps": 20,
+      "steps": 8,
       "denoise": 1.0
     }
   },
@@ -218,19 +218,26 @@
         "16",
         0
       ],
-      "filename_prefix": "video/PowerShard_H3",
+      "filename_prefix": "video/ac922_6gpu_gpu_ulysses",
       "format": "auto",
       "codec": "auto"
     }
   },
-  "20": {
-    "class_type": "SaveImage",
+  "25": {
+    "class_type": "PowerShardConfigTuning",
     "inputs": {
-      "images": [
-        "14",
+      "config": [
+        "1",
         0
       ],
-      "filename_prefix": "PowerShard_PNG/fl2va_subset_math"
+      "reserve_gib": 2.0,
+      "prefetch_blocks": 0,
+      "numa_policy": "auto",
+      "strict_attention": false,
+      "allow_host_wrappers": false,
+      "pin_memory": true,
+      "sequence_comm_dtype": "fp32",
+      "prefetch_policy": "auto"
     }
   }
 }
