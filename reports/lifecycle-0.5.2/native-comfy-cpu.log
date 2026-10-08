@@ -1,0 +1,18 @@
+{
+  "status": "PASS",
+  "device": "CPU x86_64",
+  "sampler": "native ComfyUI Euler/simple CFG=1",
+  "steps": 2,
+  "seeds": [
+    5,
+    6,
+    5
+  ],
+  "audio_video": "PASS",
+  "clone_model_options": "PASS",
+  "seed_change_repeat": "PASS",
+  "reject_patch_before_RPC": "PASS",
+  "transport": "TEST_LOCAL_CONTRACT_ONLY",
+  "distributed_CUDA": "NOT_RUN",
+  "real_checkpoint": "NOT_RUN"
+}

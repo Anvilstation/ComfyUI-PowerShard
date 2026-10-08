@@ -1,0 +1,68 @@
+{
+  "version": "0.5.3",
+  "publication_date": "2026-10-09",
+  "test_date": "2026-10-08",
+  "source_archive": "ComfyUI-PowerShard-Wan22 (7).zip",
+  "source_archive_sha256": "aa28672938f2ed9be44ba5a4f40ebecacc6463bca62d13c54471e0867ce896b7",
+  "environment": {
+    "platform": "win32",
+    "python": "3.11.15",
+    "torch": "2.12.0+cpu",
+    "torch_cuda": null
+  },
+  "pytest": {
+    "total": 429,
+    "passed": 276,
+    "skipped": 153,
+    "failed": 0,
+    "errors": 0,
+    "skip_reasons": {
+      "NOT_RUN: передайте --comfy для native H3 tests": 66,
+      "NOT_RUN: передайте --comfy для native LTX tests": 8,
+      "NOT_RUN: передайте --comfy": 49,
+      "NOT_RUN: передайте --comfy для проверки INPUT_TYPES Wan nodes": 1,
+      "NOT_RUN: передайте --comfy для native Wan tests": 24,
+      "NOT_RUN: передайте --comfy для Wan pipeline tests": 5
+    }
+  },
+  "checks": {
+    "python_compileall": "PASS",
+    "javascript_syntax": "PASS",
+    "node_registration": "PASS",
+    "registered_nodes": 32,
+    "registered_families": [
+      "MiniMax H3",
+      "Wan",
+      "LTX"
+    ],
+    "gloo_ulysses_world_sizes": [
+      3,
+      4,
+      5,
+      6
+    ]
+  },
+  "hardware": {
+    "CUDA_NCCL": "NOT_RUN",
+    "POWER9": "NOT_RUN",
+    "ATS": "NOT_RUN",
+    "production_checkpoints": "NOT_RUN",
+    "native_ComfyUI": "NOT_RUN",
+    "GPU_performance": "NOT_MEASURED"
+  },
+  "publication_changes_to_archive_files": [
+    {
+      "path": "tests/test_sequence_distributed.py",
+      "status": "modified"
+    },
+    {
+      "path": "pyproject.toml",
+      "status": "modified"
+    },
+    {
+      "path": "README_RU.md",
+      "status": "modified"
+    }
+  ],
+  "note": "Runtime source preserved from supplied ZIP. Empty-shard error metric fixed in the Ulysses test. Bilingual docs, source metadata, and publication evidence added. Historical reports describe earlier revisions."
+}

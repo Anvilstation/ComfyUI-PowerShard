@@ -1,0 +1,94 @@
+{
+  "date": "2026-10-04",
+  "status": "PASS_WITH_HARDWARE_NOT_RUN",
+  "python": "3.12",
+  "torch": "2.12.0+cpu",
+  "ComfyUI_sha": "f1072eb0350638a3390ddb6afbcaa8c6b237c6fd",
+  "pytest": {
+    "passed": 219,
+    "skipped": 16,
+    "failed": 0,
+    "duration_s": 22.856
+  },
+  "skipped_tests": [
+    {
+      "name": "test_real_ulysses_collectives[3]",
+      "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+    },
+    {
+      "name": "test_real_ulysses_collectives[4]",
+      "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+    },
+    {
+      "name": "test_real_ulysses_collectives[5]",
+      "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+    },
+    {
+      "name": "test_real_ulysses_collectives[6]",
+      "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+    },
+    {
+      "name": "test_native_h3_sequence[token-math-3]",
+      "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+    },
+    {
+      "name": "test_native_h3_sequence[token-math-4]",
+      "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+    },
+    {
+      "name": "test_native_h3_sequence[token-math-5]",
+      "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+    },
+    {
+      "name": "test_native_h3_sequence[token-math-6]",
+      "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+    },
+    {
+      "name": "test_native_h3_sequence[ulysses-math-3]",
+      "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+    },
+    {
+      "name": "test_native_h3_sequence[ulysses-math-4]",
+      "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+    },
+    {
+      "name": "test_native_h3_sequence[ulysses-math-5]",
+      "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+    },
+    {
+      "name": "test_native_h3_sequence[ulysses-math-6]",
+      "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+    },
+    {
+      "name": "test_native_h3_sequence[ulysses-sdpa-3]",
+      "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+    },
+    {
+      "name": "test_native_h3_sequence[ulysses-sdpa-4]",
+      "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+    },
+    {
+      "name": "test_native_h3_sequence[ulysses-sdpa-5]",
+      "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+    },
+    {
+      "name": "test_native_h3_sequence[ulysses-sdpa-6]",
+      "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+    }
+  ],
+  "syntax": "PASS compileall / node --check",
+  "ruff": "PASS F821/F823",
+  "ats_cpp": "PASS x86_64 g++ compilation only",
+  "matrix_dry_run": {
+    "sequence": 2,
+    "placement": 3,
+    "mlp": 6,
+    "attention": 3,
+    "spectrum": 2
+  },
+  "real_CUDA_NCCL": "NOT_RUN",
+  "real_POWER9_ATS": "NOT_RUN",
+  "real_checkpoint_generation": "NOT_RUN",
+  "original_zip_sha256": "f834353936f913c24b0c6cb8abf9545df2406e29b4b429fd9d83e4e7ce757db5",
+  "standalone_comfy_contract": "PASS CPU; no CUDA/FSDP"
+}

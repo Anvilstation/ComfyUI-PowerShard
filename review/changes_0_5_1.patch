@@ -1,0 +1,3118 @@
+--- a/ARCHITECTURE.md
++++ b/ARCHITECTURE.md
+@@ -1,4 +1,4 @@
+-# Архитектура 0.5.0
++# Архитектура 0.5.1
+ 
+ Host ComfyUI содержит native BaseModel/ModelPatcher API и proxy без diffusion weights. Отдельный subprocess на каждый выбранный CUDA UUID владеет FSDP Shard(0); meta init и checkpoint row slices предотвращают полную H3-копию на каждом rank. Session сериализует requests в safetensors/JSON, проверяет cancellation и завершение workers; готовый conditioning хранится в run-stage и очищается на end_run.
+ 
+@@ -8,4 +8,6 @@
+ 
+ Поддержка Comfy проверяется по capabilities/signatures. Custom CUDA providers проходят isolated numeric probes на каждом device, включая local padded heads для Ulysses. Политика общая для ranks; kernel/OOM exceptions завершают session. UI JSON мигрируется до десериализации positional widgets.
+ 
+-Подробнее о доказанных результатах и непроверенном hardware path: [AUDIT_REVIEW_2026-10-04.md](AUDIT_REVIEW_2026-10-04.md).
++Memory budgets учитывают driver free и reusable allocator cache; pending-stream active blocks не засчитываются. Auto MLP читает occupancy после реального conditioning expansion. Safe FP16 Linear bounds собираются из CPU row shards одним MAX при загрузке; постоянного full FP32 weight cache нет. Safe sequence по умолчанию масштабирует QKV до FP16 exchange, MAX V scale общий для ranks, FP32 restoration делается после обратного обмена. Финальный residual не сужается. Request progress сохраняется до chunk loop и включается в aborted RPC report. Optional profiler различает selected policy, реальные provider calls, SDPA operator и CUDA kernel names.
++
++Подробнее о доказанных результатах и непроверенном hardware path: [PERFORMANCE_FIX_0_5_1.md](PERFORMANCE_FIX_0_5_1.md).
+--- a/COMPATIBILITY.md
++++ b/COMPATIBILITY.md
+@@ -1,4 +1,4 @@
+-# Совместимость 0.5.0
++# Совместимость 0.5.1
+ 
+ Целевой стек — существующие PyTorch 2.12, CUDA 12.4, custom FA2 на POWER9/ppc64le с V100. Нода не навязывает новый wheel или CUDA/NCCL. Фактическая совместимость должна подтверждаться server probes из README. Импорт Python package не является проверкой sm_70 kernel.
+ 
+@@ -6,4 +6,6 @@
+ 
+ ATS работает только при реальной поддержке hardware host page tables/managed/concurrent/pageable capabilities. Обычная x86 UVA не проходит ATS gate. Legacy UI/API workflows требуют migration при изменении positional widgets; fsdp2, timeout_s и allow_unverified сохраняются только как legacy parsing на внутреннем Python API.
+ 
+-Обновлённые instructions и результаты: [README_RU.md](README_RU.md), [AUDIT_REVIEW_2026-10-04.md](AUDIT_REVIEW_2026-10-04.md).
++0.5.1 сохраняет five-widget Config и две separate MLP nodes. `sequence_comm_dtype` по умолчанию fp16 с Safe normalization; явно переданный fp32 сохраняется. CPU/CUDA cache метрики раздельные. Ваши логи используют custom torch 2.12.0a1/CUDA12.4, а validation runtime — released CPU torch 2.12.0: новая CUDA численная/performance совместимость требует server probes.
++
++Обновлённые instructions и результаты: [README_RU.md](README_RU.md), [PERFORMANCE_FIX_0_5_1.md](PERFORMANCE_FIX_0_5_1.md).
+--- a/KNOWN_LIMITATIONS.md
++++ b/KNOWN_LIMITATIONS.md
+@@ -1,4 +1,4 @@
+-# Ограничения 0.5.0
++# Ограничения 0.5.1
+ 
+ CUDA/NCCL, custom FA2, POWER9 и ATS не проверены на реальном сервере в этой ревизии. CPU тесты не удостоверяют аппаратный execution. ATS требует аппаратных capabilities, c++ compiler и managed persistent shards; activations и active FSDP groups остаются в обычной VRAM. Memory planner выдаёт оценки, не admission guarantee.
+ 
+@@ -6,4 +6,6 @@
+ 
+ В pipeline с Qwen idle=cpu_shards Config должен иметь placement=cpu; для gpu/ats используйте release/keep. Kept workers не накапливают staged prompt tensors между runs; JSON history пока сохраняется. UI migration покрывает известные LiteGraph array-link layouts; API migration предпочтителен для связанных legacy controls и неизвестных UI formats.
+ 
+-Полный статус, тесты и предлагаемые изменения: [AUDIT_REVIEW_2026-10-04.md](AUDIT_REVIEW_2026-10-04.md).
++Normalized FP16 exchange и reduced cuBLAS reductions требуют correctness/performance проверки на V100. При исчерпанной auto estimate используется minimum chunk до 256 tokens, а не token=1; возможен реальный CUDA OOM. Cache estimate не учитывает все виды fragmentation. Checkpoint-bound fast path относится к FP16 Linear; INT8 dequant path пока прежний. Profiler/Triton smoke требуют CUDA/CUPTI/совместимой custom сборки; они не пройдены на текущем CPU runtime. Наличие/выбор provider не равно его фактическому применению ко всем Qwen groups.
++
++Полный статус, тесты и предлагаемые изменения: [PERFORMANCE_FIX_0_5_1.md](PERFORMANCE_FIX_0_5_1.md), предыдущий [AUDIT_REVIEW_2026-10-04.md](AUDIT_REVIEW_2026-10-04.md).
+--- /dev/null
++++ b/PERFORMANCE_FIX_0_5_1.md
+@@ -0,0 +1,114 @@
++# PowerShard 0.5.1 — разбор регрессии на AC922
++
++Разобран присланный `powershard (1).zip`: 8 session JSON, 7 run JSON, rank logs и `Text Document.txt` с двумя снимками nvidia-smi. Исходные логи не менялись. Машинный разбор, PID, точные байты и SHA256 входных файлов: [reports/performance-0.5.1/uploaded-log-analysis.json](reports/performance-0.5.1/uploaded-log-analysis.json).
++
++**Найден дефект моего планировщика 0.5.0, который воспроизводится на числах из этих логов. Исправления ниже проверены на CPU; новая скорость, качество генерации, CUDA/NCCL и ATS на AC922 здесь не измерены. Вернуть 45 s/iteration по одному CPU-тесту обещать нельзя.**
++
++## 1. Attention и Triton
++
++| Запуск | Запрошено → выбранная policy | Фактические вызовы | Один завершённый H3 forward, rank 0 |
++|---|---|---|---:|
++| `zvqa3svd`, 4 GPU, token, CPU | vllm_flash_attn → vllm_flash_attn | 2 refiner + 50 DiT vLLM FA, без fallback | 61.56 s |
++| `89zaurbs`, 5 GPU, token, CPU | sdpa → sdpa | 2 refiner + 50 DiT SDPA | 45.17 s |
++| `hvjcdv7x`, 5 GPU, token, CPU | flash_attn → sdpa | 2 refiner + 50 DiT SDPA | 45.35 s |
++| `fkbxjovb`, 5 GPU, Ulysses, CPU | auto → vllm_flash_attn | 2 refiner + 50 DiT vLLM FA, без fallback | 51.99 s |
++| `9liuhinq`, Qwen, 5 GPU, GPU weights | auto → vllm_flash_attn | **0 FA; 50 text + 270 vision SDPA** | encode 34.10 s |
++
++У обычного `flash_attn` во всех соответствующих probes — `ModuleNotFoundError: No module named 'flash_attn_2_cuda'`. Наличие Python-пакета не означает, что его CUDA extension доступен этому окружению.
++
++У `vllm_flash_attn` проходят CUDA/numerical probes на V100, включая 56 и 12 heads для пяти карт Ulysses. Загружен `vllm_flash_attn._vllm_fa2_C.abi3.so`, версия `2.7.2.post1+cu124`. H3 действительно вызывает адаптер. Эти логи подтверждают CUDA-вызов и численный smoke, но **не содержат profiler trace, времени конкретного ядра или аппаратных счётчиков Tensor Cores**.
++
++Qwen — отдельный случай: общая policy выбирала vLLM FA, однако все реальные вызовы уходили в SDPA. Причины: FP32/head_dim vision вне области probe и произвольная text mask, которую Flash API не принимает. Mask не удаляется ради ускорения: это изменило бы conditioning. В 0.5.1 UI и `effective_used` показывают фактически использованные пути по группам. У SDPA название backend также не удостоверяет конкретное fused-ядро: это покажет trace.
++
++В production-коде PowerShard нет Triton kernels или `torch.compile`; Triton **не используется непосредственно нодой**. Внешний custom attention provider может иметь собственную реализацию, её нужно смотреть в trace. Для проверки установки/JIT добавлен изолированный Triton smoke; он не объявляется ускорением H3. Upstream Triton сейчас указывает NVIDIA compute capability 8.0+, V100 — 7.0. Это ограничение upstream, а работоспособность вашей custom/старой сборки определяется реальным probe, не названием пакета.
++
++180 W при 99–100% GPU-Util не доказывают поломку FA. Busy time отличается от полезной вычислительной пропускной способности. У повторных cast/reduction, передачи весов из RAM и NCCL есть расходы, которые показания мощности не разделяют. В приведённых запусках SDPA/token оказался быстрее vLLM/Ulysses, но менялся также режим sequence; это не чистый A/B тест провайдеров. `auto` проверяет совместимость, а не выбирает самое быстрое ядро.
++
++## 2. Где действительно находятся веса
++
++Два снимка nvidia-smi связаны с отчётами **по PID**, а не по предположению:
++
++| Снимок | Session / worker PID | CPU weights rank 0 | CUDA tensors после forward | CUDA reserved после forward | Reserved − allocated |
++|---|---|---:|---:|---:|---:|
++| 14:57:16, 4 карты | `zvqa3svd`, 17661/17663/17665/17668 | 9.386 GiB | 0.274 GiB | 10.943 GiB | 10.669 GiB |
++| 15:00:18, 5 карт | `89zaurbs`, 19381/19383/19385/19387/19389 | 7.511 GiB | 0.274 GiB | 10.123 GiB | 9.849 GiB |
++
++В обоих случаях все persistent H3 shards имеют `device=cpu`, pinned=true; `gpu_shard_bytes=0`, `sharded_after_forward=true`. Их суммарный размер по всем ranks **одинаков: 40,312,920,064 bytes**. На пятой карте последний shard чуть меньше из-за row partitioning. Это одна разделённая модель в RAM, не пять полных моделей в VRAM.
++
++Показанные в nvidia-smi десятки GB главным образом соответствуют CUDA allocator cache после временных all-gather/cast/attention/MLP allocations. Во время forward активные GPU tensors тоже действительно занимают память: измеренные пики 8.3–9.3 GiB на rank. После освобождения tensors PyTorch удерживает их storage для повторного использования; nvidia-smi продолжает показывать это как занятую память. Разница reserved−allocated — оценка неактивного cache; при pending stream work нужно учитывать active_bytes, а не только allocated.
++
++На GPU 4 обеих фотографий PID 4675 (`python`, host ComfyUI) занимает около 5950 MiB. Это **другой процесс**, не H3 worker. По снимку нельзя определить, какой host model/cache удерживает эти байты; нода не должна называть их H3 weights. На пяти картах выбран набор `0,1,2,3,5`, GPU 4 в H3 workers не участвует.
++
++В CPU mode GPU всё равно нужен для активного блока, all-gather, activations и workspace. Убрать всю занятую VRAM во время вычислений невозможно. Возвращать allocator cache драйверу на каждом DiT block/step тоже дорого. Cache сохраняется для повторного использования и очищается на end_run/idle либо исчезает при закрытии workers. 0.5.1 уменьшает лишние временные веса/FP32 transfers и показывает память по категориям; **постоянные CPU weights уже были в RAM**.
++
++## 3. Подтверждённая ошибка автоматического MLP
++
++В 0.5.0 я убрал `empty_cache()` после каждого forward, но оставил планирование только по `cudaMemGetInfo.free`. Свободные блоки собственного allocator считались недоступными. Это ошибка: allocator может их повторно использовать.
++
++Пример `89zaurbs` после первого forward: driver free ≈4.04 GiB, reserved≈10.12 GiB, allocated≈0.27 GiB. Старый план вычитает reserve, activation/communication estimates и активную FSDP group: budget становится 0. После вычитания полного MLP output автоматический chunk равен **1 token** вместо тысяч tokens. Для 9307 локальных tokens это 9307 chunks на блок, со многократным масштабированием весов и запуском GEMM.
++
++Арифметический replay после единственного завершённого forward даёт chunk=1 для **всех четырёх** новых H3 session с полным forward, включая Ulysses: там остаток планируемого budget меньше full MLP output. Это проверяется regression tests по исходным байтам. Сам прерванный следующий RPC в старой версии не записывался: его фактическое время/chunk **не измерены**. Дефект подтверждён и согласуется с резким замедлением, но объявлять его единственной причиной всех 100+ секунд было бы неверно.
++
++Другие расходы 0.5.0: Safe QKV/output обмен в FP32; повторное FP32 преобразование и вычисление bounds больших Linear weights; отключение reduced FP16 reductions cuBLAS; в новых H3 runs включён `debug_finite=true`, который сканирует промежуточные tensors. Load times в логах также сильно меняются (≈13–85 s). Полный `sampling_wall_s` прерванного запуска не является ни временем одного forward, ни временем восьми завершённых iterations.
++
++## 4. Что изменено в 0.5.1
++
++1. Планирование учитывает driver-free плюс reusable cache. Active/pending-stream allocations не считаются cache. На входе каждого автоматического MLP читается текущее allocator occupancy, где уже учтены реальные reference/keyframe expansions и materialized weights. Внутри chunk loop нет collectives или CPU tensor reads. Полностью помещающийся MLP больше не округляется вниз с маленьким лишним хвостом. При исчерпанной оценке вместо тысяч single-token GEMMs используется ограниченный minimum chunk до 256 tokens с явной диагностикой; реальный CUDA OOM остаётся ошибкой, гарантия вместимости не заявляется. Manual/off сохраняют своё поведение.
++2. Для FP16 Linear scalars/bounds вычисляются один раз на CPU checkpoint shards небольшими tiles; один MAX collective собирает bounds всех Linear. Между блоками сохраняются только числа, не full FP32/dequant weights. Если weight scale=1, GEMM использует исходный materialized FP16 weight view. INT8 storage/ConvRot не заменяются другим quant format; INT8 пока не имеет этого нового checkpoint-bound fast path.
++3. По умолчанию Safe sequence использует normalized FP16 QKV/output. Q/K масштабируются по RMS/RoPE bounds; V получает общую степень двойки после MAX по всем ranks **до** cast/exchange. Ulysses восстанавливает масштаб после обратного обмена. Неконечные значения не чинятся clamp. Финальный residual gather остаётся FP32; values >65504 не сужаются. Это вдвое уменьшает logical QKV/output payload относительно FP32; ускорение всей генерации не следует из этого автоматически. `sequence_comm_dtype=fp32` остаётся явным API режимом сравнения; Safe math сохраняет FP32 exchange.
++4. В worker/probe разрешены reduced FP16 GEMM reductions только для bounded Safe compute/Qwen; full FP16 accumulation выключена. Absolute-sum bound 16384 с запасом ограничивает частичные суммы ниже FP16 overflow. Флаг и source hash включены в preflight. CPU numerical tests не заменяют проверку этого cuBLAS пути на V100.
++5. При разрешённом fallback отсутствующий `flash_attn` теперь пробует доступный `vllm_flash_attn` перед SDPA. Strict mode по-прежнему не меняет явно выбранного провайдера. Fallback не означает, что будет быстрее SDPA; для сравнения нужны одинаковые sequence/shape/seed.
++6. В UI добавлен фактический статус по группам и ranks, allocated/cache/CPU shard breakdown. JSON run получает статус COMPLETE/INTERRUPTED_OR_FAILED. Atomic progress сохраняет chosen MLP plan до первого chunk и переживает остановку worker; host включает его в отчёт прерванного RPC.
++7. Opt-in profiler записывает реальные CUDA kernel names, SDPA operator, GEMM/attention candidates, all-to-all и NCCL. Дополнительный isolated benchmark проверяет провайдеры на геометрии из этих логов и Triton JIT без установки пакетов. CPU/NOT_RUN не объявляется CUDA PASS.
++
++## 5. Проверка на вашем сервере
++
++Остановите ComfyUI штатным способом, замените папку custom node архивом 0.5.1, полностью перезапустите Python-процесс и обновите страницу браузера. Не оставляйте вторую копию ноды в custom_nodes. Полный restart нужен, чтобы старые импортированные modules и workers не смешивались с новыми файлами. Python, torch/CUDA/NCCL и custom FA не переустанавливаются.
++
++Сначала проверьте маленький настоящий NCCL/FSDP test в используемом окружении ComfyUI. Из папки ноды:
++
++```bash
++python scripts/probe_h3_cuda.py --comfy /opt/ComfyUI --gpus 0,1,2,3,5 --sequence-mode token --attention-backend sdpa --weight-placement cpu --output reports/local-5gpu-cpu-token.json
++python scripts/probe_h3_cuda.py --comfy /opt/ComfyUI --gpus 0,1,2,3,5 --sequence-mode ulysses --attention-backend sdpa --weight-placement cpu --output reports/local-5gpu-cpu-ulysses.json
++```
++
++Microbenchmark реальной attention geometry из присланного forward (total=46535, 56 heads, head_dim=128). Выполняйте при свободных workers; один GPU сначала достаточно для проверки, затем при необходимости повторите на остальных. Return code 2 означает FAIL/NOT_RUN какого-либо выбранного провайдера; все результаты сохраняются по отдельности. Отсутствующий `flash_attn_2_cuda` не мешает отдельному vLLM probe. Если profiler/CUPTI недоступен, сохранённые benchmark/numerical результаты остаются отдельно от `kernels.status=UNAVAILABLE/NO_CUDA_EVENTS`; CUDA illegal access/OOM не скрываются как проблема профилировщика.
++
++```bash
++python scripts/probe_accelerators.py --gpus 0 --world 5 --mode token --output reports/local-attention-token.json
++python scripts/probe_accelerators.py --gpus 0 --world 5 --mode ulysses --output reports/local-attention-ulysses.json
++```
++
++Проверка repeated forward с реальными весами и синтетическим conditioning:
++
++```bash
++python scripts/accept_h3.py --comfy /opt/ComfyUI --checkpoint /opt/ComfyUI/models/diffusion_models/minimax_h3_fl2va_pruned_bf16.safetensors --profile profiles/ac922-v100.json --gpus 0,1,2,3,5 --weight-placement cpu --sequence-mode token --sequence-comm-dtype fp16 --attention-backend sdpa --mlp-mode auto --lifecycle --output reports/local-real-h3-token
++```
++
++По умолчанию этот acceptance test малый; добавленные `--frames`, `--latent-height`, `--latent-width`, `--audio-tokens`, `--text-tokens` позволяют проверить длинный workload. Размеры latent не являются пиксельным разрешением. Качество и исходный FL2VA payload проверяйте в своём workflow, поскольку синтетический test не заменяет генерацию.
++
++Для замера верните **тот же** workflow/seed/CFG/resolution/frames/conditioning. Начните с 5 GPU `0,1,2,3,5`, CPU weights, token, SDPA, FP16 Safe on, `debug_finite=false`, Spectrum off, prefetch=0. Это рекомендация по вашим завершённым timing samples, не обещание превосходства SDPA на других shapes. Выполните несколько последовательных шагов; смотрите отдельные `forward_s` и выбранные MLP chunks. Затем сравните vLLM FA, меняя только attention, и отдельно Ulysses. Debug finite включайте для диагностики NaN или отдельного correctness run.
++
++Для одного отдельного profiling run перед запуском ComfyUI штатной командой:
++
++```bash
++export POWERSHARD_PROFILE=1
++export POWERSHARD_PROFILE_FORWARDS=2
++```
++
++Профилирование добавляет overhead и может создавать большие trace files; его время не используйте как обычный benchmark. В `output/powershard` будут rank logs, run/session JSON, `*-progress.json` и `*.trace.json`. `kernels.attention_operators` показывает SDPA dispatch; `attention_kernel_names`/`gemm_kernel_names` — наблюдавшиеся CUDA names. `triton_kernel_names` — имена, содержащие triton, а отсутствие такого имени само по себе не доказывает отсутствие внешних сгенерированных kernels. Для процентной загрузки Tensor Cores нужны аппаратные counters, например отдельный Nsight Compute run; wattage их не заменяет. После profiling уберите две environment variables перед обычным benchmark.
++
++Для CPU/GPU/ATS weight audit остаётся `tests/audit_memory.py`. В архиве есть старые Qwen runs с `weight_placement=ats`, `cpu_offload=true`, CPU shards и timeout_s — это прежний CPU fallback, **не доказательство работы нового managed ATS**. 0.5.x запрещает такое переименование режима; нужны managed pointer evidence и актуальный source hash.
++
++## 6. Доказательства и оставшиеся проверки
++
++Автоматические результаты текущей ревизии: [reports/performance-0.5.1/verification.json](reports/performance-0.5.1/verification.json), pytest XML/log и native CPU sampler contract рядом. Проверены large-value Safe compute, normalized half exchange/final FP32 residual на 3/4/5/6 ranks с emulated transport, равенство native outputs, cache-budget replay, interrupted RPC progress, strict/fallback semantics и синтаксис UI. Настоящие Gloo tests честно пропущены из-за EPERM на TCP transport; здесь нет V100/POWER9 для CUDA/NCCL tests.
++
++Следующие приоритеты производительности после исправления: profile actual workload; A/B prefetch 0/1 с текущим memory budget; проверить H2D/NUMA и NCCL overlap; сохранить точную Qwen mask semantics при специальном varlen/causal path; отдельно исследовать bounded INT8 dequant fast path. Эти изменения в 0.5.1 не объявляются реализованными или ускоренными.
++
++## Первичные источники
++
++- [PyTorch 2.12 CUDA semantics: allocator, allocated/reserved, FP16 reduction и V100 timings](https://docs.pytorch.org/docs/2.12/notes/cuda.html).
++- [FSDP2 CPUOffloadPolicy: CPU shards → H2D → all-gather, reshard lifetime](https://docs.pytorch.org/docs/2.12/distributed.fsdp.fully_shard.html).
++- [Triton upstream supported hardware](https://github.com/triton-lang/triton#compatibility).
++- [Flash Attention upstream requirements](https://github.com/Dao-AILab/flash-attention). Это не спецификация вашей custom sm_70 сборки; её реальные probe/call данные взяты из присланных логов.
+--- a/README_RU.md
++++ b/README_RU.md
+@@ -1,8 +1,8 @@
+-# ComfyUI-PowerShard 0.5.0
++# ComfyUI-PowerShard 0.5.1
+ 
+ MiniMax H3 в ComfyUI с FSDP2 sequence sharding, выбором любого непустого CUDA-visible набора GPU и отдельными MLP-нодами. Основной профиль: IBM AC922, POWER9 ppc64le, 6×V100 16 GB, 128 GB RAM, Ubuntu 20.04.5, существующие custom PyTorch 2.12 / CUDA 12.4 / FA2.
+ 
+-Код исправлен и проверен на CPU с native ComfyUI. **CUDA/NCCL, настоящий H3 checkpoint и ATS на AC922 в этой проверке не запускались.** Результаты и причины пропусков: [AUDIT_REVIEW_2026-10-04.md](AUDIT_REVIEW_2026-10-04.md). Старые отчёты не подтверждают текущую GPU-сборку.
++Исправлена регрессия автоматического MLP после первого шага: планирование учитывает reusable CUDA cache. Safe sequence передаёт нормализованный FP16 QKV/output, final residual остаётся FP32; FP16 Linear использует checkpoint bounds без повторного полного FP32 weight cast. **Новая скорость, CUDA/NCCL, настоящий H3 checkpoint и ATS на AC922 в этой проверке не измерены.** Разбор присланных логов, ограничения и команды: [PERFORMANCE_FIX_0_5_1.md](PERFORMANCE_FIX_0_5_1.md). Предыдущий аудит 0.5.0: [AUDIT_REVIEW_2026-10-04.md](AUDIT_REVIEW_2026-10-04.md).
+ 
+ ## Установка обновления
+ 
+@@ -43,9 +43,9 @@
+ 
+ H3 `sequence_mode=ulysses` поддерживает 3, 4, 5, 6 и другие размеры GPU-набора: heads дополняются нулевыми до кратности world, token padding убирается до softmax, фиктивные heads удаляются после обратного обмена. Token-режим собирает K/V. Qwen text использует свой token sequence path, vision вычисляется реплицированно; переключатель Ulysses относится к H3.
+ 
+-FP16 Safe включён по умолчанию в H3 Loader. Linear GEMM масштабируется, condition/norm/SiLU/residual сохраняют FP32. Обмен K/V и итогового residual не сужает восстановленные значения до FP16. Custom FA/SDPA получают ограниченные FP16 Q/K/V после scaling. Chunking MLP управляется независимо от FP16 Safe.
++FP16 Safe включён по умолчанию в H3 Loader. Linear GEMM масштабируется, condition/norm/SiLU/residual сохраняют FP32. По умолчанию QKV/output масштабируются **до** FP16 exchange; большой V никогда не сужается без нормализации. Итоговый residual gather остаётся FP32. Явный `sequence_comm_dtype=fp32` доступен в Python/API для сравнения, Safe math тоже обменивается FP32. Chunking MLP управляется независимо от FP16 Safe.
+ 
+-`auto` проверяет vllm_flash_attn, flash_attn, SDPA, math по порядку на каждой карте. Для H3 Ulysses проверяются полное число heads и `ceil(heads/world)`; ошибка импорта `flash_attn_2_cuda` означает, что запрошенный интерфейс недоступен данному Python. Нода не может установить неизвестную custom FA2-сборку. Strict attention запрещает семантический fallback. CUDA/OOM ошибки завершают session и не повторяют блок на повреждённом context.
++`auto` проверяет vllm_flash_attn, flash_attn, SDPA, math по порядку на каждой карте; это выбор совместимости, не скорости. Для H3 Ulysses проверяются полное число heads и `ceil(heads/world)`; ошибка импорта `flash_attn_2_cuda` означает, что запрошенный интерфейс недоступен данному Python. При разрешённом fallback flash_attn также проверяет vllm_flash_attn перед SDPA. Strict attention запрещает подмену провайдера. Кнопка «GPU / attention / память» показывает реальные вызовы по группам и память ranks. CUDA/OOM ошибки завершают session и не повторяют блок на повреждённом context. Triton/torch.compile непосредственно не вызываются этой нодой.
+ 
+ Когда токенов слишком мало для непустого torch.chunk на всех ranks, проход явно использует реплицированные вычисления с FSDP sharding. Набор GPU не сокращается; это отражено в `duplicated_compute` и warning. Для нормальных video sequences доступен полный sequence path.
+ 
+@@ -79,4 +79,4 @@
+ 
+ При повторном NaN включите `POWERSHARD_DEBUG_FINITE=1` и сохраните output/powershard rank logs. При OOM смотрите worker CUDA peak, driver memory по UUID, CPU RSS и largest active group. `tests/audit_memory.py` теперь действительно запускает workers до load-only замера и читает их статистику.
+ 
+-Команды исследования производительности и приоритеты доработок находятся в [AUDIT_REVIEW_2026-10-04.md](AUDIT_REVIEW_2026-10-04.md).
++Команды исследования производительности и приоритеты доработок находятся в [PERFORMANCE_FIX_0_5_1.md](PERFORMANCE_FIX_0_5_1.md).
+--- a/powershard/__init__.py
++++ b/powershard/__init__.py
+@@ -1,2 +1,2 @@
+ """PowerShard. Импорт не инициализирует CUDA и не запускает процессы."""
+-__version__ = "0.5.0"
++__version__ = "0.5.1"
+--- /dev/null
++++ b/powershard/accelerator_probe.py
+@@ -0,0 +1,96 @@
++"""Isolated import/kernel/numerical/performance probe; never an inference path."""
++import argparse
++import json
++import math
++import statistics
++import time
++
++
++def capture_kernels(call):
++    import torch
++    from .telemetry import profiler_summary
++    try:
++        with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CPU,torch.profiler.ProfilerActivity.CUDA]) as prof:
++            call();torch.cuda.synchronize()
++        result=profiler_summary(prof)
++        result["status"]="CAPTURED" if result["cuda_kernel_count"] else "NO_CUDA_EVENTS"
++        return result
++    except Exception as error:
++        if any(x in str(error).lower() for x in ("illegal memory", "out of memory", "device-side assert", "cuda error")):
++            raise
++        # Retain benchmark results; no CUDA calls after this failed attempt.
++        return dict(status="UNAVAILABLE",reason=f"{type(error).__name__}: {error}")
++
++
++def benchmark(provider, total=46535, world=5, heads=56, dim=128, mode="token", repeats=3):
++    import torch
++    from .telemetry import accelerator_inventory
++    if not torch.cuda.is_available():
++        return dict(status="NOT_RUN",reason="CUDA unavailable",accelerators=accelerator_inventory())
++    device=torch.device("cuda:0")
++    if provider=="triton":
++        from .triton_smoke import add
++        x=torch.arange(4096,device=device,dtype=torch.float32);y=x*3
++        started=time.perf_counter();result=add(x,y);torch.cuda.synchronize()
++        torch.testing.assert_close(result,x+y,atol=0,rtol=0)
++        first_call_s=time.perf_counter()-started
++        kernels=capture_kernels(lambda:add(x,y))
++        return dict(status="PASS",import_result="PASS",kernel_result="PASS",numerical_result="PASS",
++                    compile_and_first_call_s=first_call_s,kernels=kernels,
++                    accelerators=accelerator_inventory(),h3_execution="NOT_USED_BY_POWERSHARD",
++                    note="A pointwise JIT smoke does not certify Triton GEMM/attention or H3 acceleration")
++    from .attention_probe import probe
++    from .attention_providers import FlashProvider
++    from .attention_contract import AttentionOptions,sdpa_attention
++    local_heads=math.ceil(heads/world) if mode=="ulysses" else heads
++    lq=total if mode=="ulysses" else math.ceil(total/world)
++    certification=probe(provider,dim,local_heads)
++    call=FlashProvider(provider) if provider in ("flash_attn","vllm_flash_attn") else sdpa_attention
++    generator=torch.Generator(device=device).manual_seed(1729)
++    q=torch.randn(1,lq,local_heads,dim,device=device,dtype=torch.float16,generator=generator)
++    k,v=(torch.randn(1,total,local_heads,dim,device=device,dtype=torch.float16,generator=generator) for _ in range(2))
++    options=AttentionOptions(softmax_scale=dim**-.5)
++    started=time.perf_counter();result=call(q,k,v,options);torch.cuda.synchronize()
++    warmup_s=time.perf_counter()-started
++    # FP32 MATH reference for eight query rows with ALL keys. Do not allocate
++    # a full Lq*Lk score matrix, and do not compare a provider with itself.
++    from torch.nn.attention import sdpa_kernel,SDPBackend
++    rows=torch.linspace(0,lq-1,min(8,lq),device=device).long()
++    with sdpa_kernel(SDPBackend.MATH):
++        reference=sdpa_attention(q[:,rows].float(),k.float(),v.float(),options)
++    torch.testing.assert_close(result[:,rows].float(),reference,atol=.007,rtol=.007)
++    maximum_error=float((result[:,rows].float()-reference).abs().max())
++    del result,reference
++    cuda_ms,wall_s=[],[]
++    for _ in range(repeats):
++        begin=torch.cuda.Event(enable_timing=True);end=torch.cuda.Event(enable_timing=True)
++        torch.cuda.synchronize();started=time.perf_counter();begin.record()
++        result=call(q,k,v,options);end.record();torch.cuda.synchronize()
++        wall_s.append(time.perf_counter()-started);cuda_ms.append(begin.elapsed_time(end))
++        del result
++    kernels=capture_kernels(lambda:call(q,k,v,options))
++    return dict(status="PASS",import_result="PASS",kernel_result="PASS",numerical_result="PASS",
++                provider=provider,geometry=dict(mode=mode,world=world,total=total,lq=lq,heads=local_heads,dim=dim),
++                warmup_s=warmup_s,cuda_ms=cuda_ms,wall_s=wall_s,median_cuda_ms=statistics.median(cuda_ms),
++                max_abs_reference=maximum_error,certification=certification,kernels=kernels,
++                accelerators=accelerator_inventory(),note="Attention microbenchmark only; no FSDP/offload/MLP/NCCL time included")
++
++
++def main():
++    parser=argparse.ArgumentParser()
++    parser.add_argument("provider",choices=["flash_attn","vllm_flash_attn","sdpa","triton"])
++    parser.add_argument("--total",type=int,default=46535)
++    parser.add_argument("--world",type=int,default=5)
++    parser.add_argument("--heads",type=int,default=56)
++    parser.add_argument("--dim",type=int,default=128)
++    parser.add_argument("--mode",choices=["token","ulysses"],default="token")
++    parser.add_argument("--repeats",type=int,default=3)
++    args=parser.parse_args()
++    if min(args.total,args.world,args.heads,args.dim,args.repeats)<1:parser.error("sizes must be positive")
++    try:result=benchmark(**vars(args))
++    except Exception as error:result=dict(status="FAIL",reason=f"{type(error).__name__}: {error}",provider=args.provider)
++    print(json.dumps(result,ensure_ascii=False))
++    return 0 if result["status"]=="PASS" else 2
++
++
++if __name__=="__main__":raise SystemExit(main())
+--- a/powershard/attention.py
++++ b/powershard/attention.py
+@@ -116,6 +116,25 @@
+     sequence = state is not None and state.get("enabled", False)
+     from .telemetry import region
+     comm_dtype = None
++    from .attention_contract import AttentionOptions
++    scale, restore_v = self.head_dim**-.5, 1.
++    scaled_wire = (sequence and safe and self._ps_attention.effective != "math"
++                   and state["comm_dtype"] == "fp16")
++    if scaled_wire:
++        # Normalize BEFORE exchange. Q/K have checkpoint-derived RMS/RoPE
++        # bounds. V uses one device-side global maximum so every rank has the
++        # same scale, including uneven/padded head shards. Raw large FP32 V
++        # is never blindly cast to half. Final residual gather stays FP32.
++        sq, sk = self._ps_qk_scales
++        q, k = (q.float()/sq).half(), (k.float()/sk).half()
++        from .fp16_safe import power2_scale
++        maximum = v.float().abs().amax()
++        with region("sequence_V_scale_MAX"):
++            dist.all_reduce(maximum, op=dist.ReduceOp.MAX)
++        state["scale_collectives"] += 1
++        restore_v = power2_scale(maximum/16384.)
++        v = (v.float()/restore_v).half()
++        scale *= sq*sk
+     if sequence:
+         if state["ulysses"]:
+             with region("sequence_ulysses_QKV_all_to_all"):
+@@ -135,9 +154,8 @@
+             comm_dtype = str(kv.dtype if dtype is None else dtype)
+             state["kv_collectives"] += 1
+             state["kv_gathered_bytes"] += kv.numel()*(kv.element_size() if dtype is None else 2 if dtype==torch.float16 else 4)
+-    from .attention_contract import AttentionOptions
+-    scale, restore_v = self.head_dim**-.5, 1.
+-    if safe and self._ps_attention.effective != "math":
++        state["effective_comm_dtype"] = str(k.dtype)
++    if safe and self._ps_attention.effective != "math" and not scaled_wire:
+         sq, sk = self._ps_qk_scales
+         q, k = (q.float()/sq).half(), (k.float()/sk).half()
+         from .fp16_safe import power2_scale
+@@ -147,13 +165,17 @@
+     out = self._ps_attention(q.unsqueeze(0), k.unsqueeze(0), v.unsqueeze(0),
+         AttentionOptions(softmax_scale=scale), group=self._ps_attention_group, compute_fp16=safe)
+     out = out.squeeze(0)  # BLHD dispatcher -> LHD exchange
+-    if safe:
++    if safe and not scaled_wire:
+         out = out.float()*restore_v
+     if sequence and state["ulysses"]:
++        exchanged_bytes = math.ceil(state["total"]/dist.get_world_size())*dist.get_world_size()*out.shape[1]*out.shape[2]*out.element_size()
+         with region("sequence_ulysses_output_all_to_all"):
+             out = ulysses_sequence_to_heads(out, state["total"], self.heads)
+         state["out_collectives"] += 1
+         comm_dtype = str(out.dtype)
++        state["out_exchanged_bytes"] += exchanged_bytes
++    if scaled_wire:
++        out = out.float()*restore_v
+     self._ps_shapes = dict(q=list(q.shape), k=list(k.shape), v=list(v.shape),
+                            local_input=list(x.shape), communication_dtype=comm_dtype)
+     return self.out_proj(out.reshape(n, self.heads*self.head_dim))
+@@ -219,6 +241,7 @@
+             if _i == 0:
+                 state["total"] = h.shape[0]
+                 state["kv_collectives"],state["kv_gathered_bytes"],state["out_collectives"] = 0,0,0
++                state["scale_collectives"],state["out_exchanged_bytes"] = 0,0
+                 state["mode"] = mode
+                 world=dist.get_world_size()
+                 state["ulysses"] = mode == "ulysses"
+--- a/powershard/attention_policy.py
++++ b/powershard/attention_policy.py
+@@ -46,6 +46,7 @@
+         kv_heads = geometry.get("kv_heads")
+     candidates = ["vllm_flash_attn","flash_attn","sdpa","math"] if requested=="auto" else [requested]
+     if config.allow_fallback:
++        if requested == "flash_attn":candidates.append("vllm_flash_attn")
+         candidates += ["sdpa","math"]
+     reports = {}
+     probe_heads = [heads]
+@@ -148,7 +149,13 @@
+         return result
+ 
+     def report(self):
++        used={}
++        for label, count in self.counts.items():
++            group, provider = label.rsplit(":",1)
++            used.setdefault(group,{})[provider]=count
+         return dict(requested=self.requested,effective=self.effective,
++                    effective_used=used,
++                    effective_note="selected policy; effective_used/call_counts are actual provider calls by group, not CUDA kernel identity",
+                     dispatch="SDPA automatic dispatch" if self.effective=="sdpa" else self.effective,
+                     provider=self.provider.identity if self.provider else {"module":"torch"},
+                     policy=self.policy,call_counts=dict(self.counts),semantic_fallbacks=self.reasons.copy(),memory_estimate=self.memory_estimate.copy())
+--- a/powershard/config.py
++++ b/powershard/config.py
+@@ -26,7 +26,7 @@
+     memory_policy: str = "auto"
+     weight_placement: str = "gpu"
+     sequence_mode: str = "token"
+-    sequence_comm_dtype: str = "fp32"
++    sequence_comm_dtype: str = "fp16"
+     allow_host_wrappers: bool = False
+ 
+     def __post_init__(self):
+@@ -94,7 +94,8 @@
+             "compute_dtype": "FP16 scaled GEMM; FP32 condition/norm/SiLU/softmax/final" if patch and patch.active else "legacy FP16; FP32 native islands",
+             "residual_dtype": "float32" if patch and patch.active else "float16",
+             "activation_dtype": "FP32 restored; bounded FP16 GEMM inputs" if patch and patch.active else "legacy",
+-            "communication_dtype": "parameter dtype per FSDP group; sequence KV/activations FP32 with safe patch",
++            "communication_dtype": ("parameter dtype per FSDP group; normalized QKV/output "
++                                    + self.sequence_comm_dtype + "; final residual FP32; Safe math exchange FP32"),
+             "quantization_format": "int8_tensorwise_convrot" if self.precision == "int8_fp16" else "none; BF16 source converted locally",
+             "attention_backend": self.requested_attention,
+             "distributed_backend": self.backend,
+--- a/powershard/diagnostics.py
++++ b/powershard/diagnostics.py
+@@ -68,6 +68,8 @@
+     out["numa_nodes"] = {str(p):p.read_text().strip() for p in Path("/sys/devices/system/node").glob("node*/distance")}
+     try:
+         import torch
++        from .telemetry import accelerator_inventory
++        out["accelerators"] = accelerator_inventory()
+         out["torch"] = {"version": torch.__version__, "cuda_build": torch.version.cuda, "config": torch.__config__.show(),
+                         "cuda_available": torch.cuda.is_available(), "distributed": torch.distributed.is_available(),
+                         "nccl_available": torch.distributed.is_available() and torch.distributed.is_nccl_available(),
+--- a/powershard/fp16_safe.py
++++ b/powershard/fp16_safe.py
+@@ -8,14 +8,26 @@
+ from torch.nn import functional as F
+ 
+ 
++def configure_matmul(safe):
++    """Worker/probe-local cuBLAS policy; never called in ComfyUI host."""
++    torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = bool(safe)
++    if hasattr(torch.backends.cuda.matmul,"allow_fp16_accumulation"):
++        torch.backends.cuda.matmul.allow_fp16_accumulation = False
++
++
+ def power2_scale(ratio):
+     # Ограничивается только показатель масштаба снизу нулём, НЕ активации.
+     # Все операции остаются на device; нет .item()/Python bool(tensor).
+     return torch.exp2(torch.ceil(torch.log2(torch.maximum(ratio, torch.ones_like(ratio)))))
+ 
+ 
+-def prepare_matmul(b):
++def prepare_matmul(b, constants=None):
+     """Подготовить только активную матрицу. Возвращаемые tensors не переживают MLP."""
++    if constants is not None and b.dtype == torch.float16:
++        # Scalar bounds are computed from checkpoint shards once at load. No
++        # FP32 cast/abs/sum of a full FSDP matrix in every Linear/chunk/step.
++        sb, bound_b = constants
++        return b if sb == 1. else b/sb, sb, bound_b
+     bf = b.float()
+     sb = power2_scale(bf.abs().amax(dim=(-2, -1), keepdim=True) / 16384.)
+     bh = (bf / sb).half()
+@@ -44,9 +56,10 @@
+     return prepared_matmul(af, prepare_matmul(bf))
+ 
+ 
+-def safe_linear(x, weight, bias=None):
++def safe_linear(x, weight, bias=None, constants=None):
+     vector = x.ndim == 1
+-    out = scaled_matmul(x.unsqueeze(0) if vector else x, weight.transpose(-1, -2))
++    a = x.unsqueeze(0) if vector else x
++    out = prepared_matmul(a, prepare_matmul(weight.transpose(-1, -2), constants))
+     if vector:
+         out = out.squeeze(0)
+     # Bias добавляется ПОСЛЕ компенсации; f(x/s)*s неверно при ненулевом bias.
+@@ -111,7 +124,7 @@
+ 
+ 
+ def chunked_mlp_forward(self, x):
+-    from .memory_policy import mlp_plan
++    from .memory_policy import mlp_plan, mlp_budget
+     from .operations import prepared_linears
+     from .telemetry import region
+     shape = x.shape
+@@ -119,12 +132,22 @@
+     policy = getattr(self, "_ps_mlp_policy", None)
+     mode = policy.mlp_chunk_mode if policy else "manual"
+     context = getattr(self, "_ps_memory_context", {})
+-    budget = context.get("mlp_budget_bytes", 256 * 2**20)
++    budget, budget_info = mlp_budget(context, x.device)
+     safe = getattr(self.fc1, "_ps_safe", False)
+     dtype = torch.float32 if safe else x.dtype
+     output_bytes = rows.shape[0]*self.fc2.out_features*(4 if safe else x.element_size())
+     plan = mlp_plan(len(rows),shape[-1],self.fc2.in_features,mode,self._ps_mlp_chunk,max(0,budget-output_bytes))
++    plan.update(budget_info)
+     plan["full_output_bytes"] = output_bytes
++    # Publish before the first chunk as well: interrupted RPC diagnostics must
++    # show the chunk actually chosen, not just the last completed forward.
++    self._ps_mlp_report = plan
++    if context.get("_progress"):
++        context["_progress"]("mlp_plan", dict(module=self._ps_tracker.labels[self._ps_finite_slot], **plan))
++    if plan["estimate_exhausted"] and not getattr(self._ps_tracker, "_mlp_floor_warned", False):
++        import warnings
++        warnings.warn("MLP auto: оценка workspace исчерпана; минимальный chunk 256 (или число локальных tokens). Возможен CUDA OOM; проверьте memory plan.")
++        self._ps_tracker._mlp_floor_warned = True
+     result = torch.empty((rows.shape[0], self.fc2.out_features), dtype=dtype, device=x.device)
+     # Подготовка весов один раз на MLP, только если остаётся бюджет для chunks.
+     # FSDP оборачивает block: внутри этого цикла НЕТ FSDP collectives.
+--- a/powershard/fsdp_backend.py
++++ b/powershard/fsdp_backend.py
+@@ -51,10 +51,14 @@
+ def memory(device):
+     if device.type != "cuda":
+         return {"device": str(device), "cuda": "NOT_RUN"}
+-    free, total = torch.cuda.mem_get_info(device)
+-    return dict(device=str(device), allocated=torch.cuda.memory_allocated(device),
++    from .memory_policy import available_memory
++    snapshot = available_memory(device)
++    return dict(device=str(device), allocated=snapshot["allocated"],
+                 reserved=torch.cuda.memory_reserved(device), peak_allocated=torch.cuda.max_memory_allocated(device),
+-                peak_reserved=torch.cuda.max_memory_reserved(device), free=free, total=total)
++                peak_reserved=torch.cuda.max_memory_reserved(device), free=snapshot["free"], total=snapshot["total"],
++                inactive_cache_bytes=snapshot["reusable_cache_bytes"], active_bytes=snapshot["active_bytes"],
++                reusable_available_bytes=snapshot["available_bytes"], allocator=snapshot["allocator"],
++                note="reserved includes reusable CUDA cache; it is not persistent model weight bytes")
+ 
+ 
+ def wrap_fsdp(root, mesh, config=None):
+@@ -93,6 +97,11 @@
+     from safetensors import safe_open
+     consumed, evidence = set(), []
+     aliases = list(root.named_parameters(remove_duplicate=False))
++    from .operations import Linear, checkpoint_row_bounds, matmul_constants
++    bounded_linears = {(n+".weight" if n else "weight"): m for n, m in root.named_modules()
++                       if isinstance(m, Linear) and getattr(m, "_ps_safe", False)
++                       and not getattr(m, "_ps_fp32", False) and m.weight.dtype == torch.float16}
++    row_bounds = {}
+     if len({id(p) for _, p in aliases}) != len(aliases):
+         raise ValueError("Обнаружены tied parameters: нужен отдельный audited mapping, загрузка остановлена")
+     # При offload materialize CPU DTensor shards СРАЗУ; не full CPU models,
+@@ -141,6 +150,8 @@
+             if local.shape != piece.shape:
+                 raise RuntimeError(f"FSDP padding/shape не совпал: {key}: {local.shape} != {piece.shape}")
+             local.copy_(piece.to(dtype=local.dtype, device=local.device))
++            if name in bounded_linears:
++                row_bounds[name] = checkpoint_row_bounds(piece)
+             evidence.append(dict(name=key, rows=[a,b], shape=list(param.shape), local_shape=list(local.shape),
+                                  dtype=str(param.dtype), local_bytes=local.numel()*local.element_size(),
+                                  device=str(local.device), pinned=local.is_pinned(),
+@@ -166,6 +177,17 @@
+         unexpected = set(ckpt.tensors) - consumed
+         if any(not k.endswith(".comfy_quant") for k in unexpected):
+             raise ValueError(f"Непрочитанные веса: {sorted(unexpected)[:12]}")
++    if row_bounds:
++        # Row-sharded weights: maxima of local row sums/maxima give exact
++        # global bounds. One tiny MAX collective for the whole checkpoint.
++        names = sorted(row_bounds)
++        maxima = torch.tensor([row_bounds[n] for n in names], dtype=torch.float64, device=device)
++        if world > 1:
++            dist.all_reduce(maxima, op=dist.ReduceOp.MAX)
++        for name, (maximum, row_sum) in zip(names, maxima.cpu().tolist()):
++            module = bounded_linears[name]
++            module._ps_weight_bounds = matmul_constants(maximum, row_sum, module.in_features)
++        del maxima
+     if managed_pool is not None:
+         managed_pool.assert_parameters(root)
+         for item in evidence:
+@@ -255,7 +277,7 @@
+         install_spectrum(net,self.spectrum)
+ 
+     def plan_memory(self, command, args, kwargs=None):
+-        from .memory_policy import plan_forward
++        from .memory_policy import plan_forward, available_memory
+         if command=="forward":
+             video,audio=args[0]
+             context=args[2] if len(args)>2 else (kwargs or {})["context"]
+@@ -272,7 +294,7 @@
+         # H3 inner=heads*head_dim НЕ равен hidden_size (7168 vs5376 Pruned).
+         # Global gathered KV, cast/copy allowance и local packing; не NCCL bytes.
+         # fp16-канал sequence (sequence_comm_dtype=fp16) вдвое меньше fp32.
+-        comm_bytes = 4 if self.patch.active or self.config.sequence_comm_dtype == "fp32" else 2
++        comm_bytes = 4 if self.config.sequence_comm_dtype == "fp32" or self.attention.effective == "math" and self.patch.active else 2
+         if sequence and self.config.sequence_mode == "ulysses":
+             padded_heads = math.ceil(attn.heads/self.world)*self.world
+             # packed send+receive, rearrange, attention output and inverse
+@@ -280,9 +302,11 @@
+         else:
+             communication = (4*math.ceil(tokens/self.world)*self.world+4*local_tokens)*attn.heads*attn.head_dim*comm_bytes if sequence else 0
+         communication = int(communication)
+-        free=torch.cuda.mem_get_info(self.device)[0] if self.device.type=="cuda" else 2**30
+-        plan=plan_forward(free,int(self.config.reserve_gib*2**30),activation,communication,
+-                          max(self.group_bytes,default=0),self.config.prefetch_blocks,self.config.memory_policy)
++        snapshot = available_memory(self.device)
++        plan=plan_forward(snapshot["free"],int(self.config.reserve_gib*2**30),activation,communication,
++                          max(self.group_bytes,default=0),self.config.prefetch_blocks,self.config.memory_policy,
++                          reusable_bytes=snapshot["reusable_cache_bytes"])
++        plan["allocator"] = snapshot["allocator"]
+         payload=(kwargs or {}).get("minimax_payload",{})
+         if payload.get("refs") or payload.get("keyframes"):
+             plan["conditioning_tokens"]="UNKNOWN reference/keyframe expansion; token estimate is a lower bound"
+@@ -299,6 +323,9 @@
+                     unit.set_modules_to_forward_prefetch(list(chain[i+1:i+1+plan["effective_prefetch"]]))
+         self.memory_context.clear()
+         self.memory_context.update(plan)
++        if getattr(self, "progress", None):
++            self.progress("memory_plan", plan)
++            self.memory_context["_progress"] = self.progress
+         return plan
+ 
+     def call(self, command, args, kwargs):
+@@ -362,6 +389,9 @@
+             active_plus_prefetch_parameter_bound_bytes=self.root_group_bytes+sum(sorted(self.group_bytes[:-1], reverse=True)[:1+plan["effective_prefetch"]]),
+             bound_excludes="copy/communication buffers, temporary FP32 casts and dequant; inspect CUDA peak/trace",
+             activation_workspace_bytes="NOT_SEPARATELY_ATTRIBUTED; included in CUDA allocated/peak")
++        metrics["safe_gemm"] = dict(bound_source="checkpoint CPU row shards + one MAX collective",
++            cached_bound_linears=sum(hasattr(m, "_ps_weight_bounds") for m in self.root.modules()),
++            cache="scalar metadata only; no full FP32/prepared weight cache between blocks")
+         if sequence_active:
+             total = self.root.network.blocks[0].attn._ps_sequence["total"]
+             metrics["local_token_range"] = shard_bounds(total, dist.get_rank(), self.world)
+@@ -374,5 +404,8 @@
+                 gathered_bytes=sequence_state.get("kv_gathered_bytes",0),final_hidden_all_gathers=1,
+                 mode=effective_mode,
+                 output_all_to_all=sequence_state.get("out_collectives",0),
++                scale_all_reduces=sequence_state.get("scale_collectives",0),
++                output_exchanged_bytes=sequence_state.get("out_exchanged_bytes",0),
++                communication_dtype=sequence_state.get("effective_comm_dtype"),
+                 note="Logical tensor bytes, not measured NCCL link traffic; Ulysses: fused QKV + output all-to-all")
+         return result, metrics
+--- a/powershard/memory_policy.py
++++ b/powershard/memory_policy.py
+@@ -1,5 +1,42 @@
+ """Оценки для планирования, не admission check и не измеренная память активаций."""
+ import math
++
++
++def available_memory(device):
++    """Driver-free + reusable allocator cache, not total reserved storage.
++
++    Read at a synchronized RPC boundary, or use active_bytes inside a forward
++    so blocks awaiting stream completion are not counted as reusable. This is
++    an estimate: fragmentation/external allocations can still cause an OOM.
++    """
++    import torch
++    if device.type != "cuda":
++        return dict(free=2**30, total=2**30, reusable_cache_bytes=0,
++                    available_bytes=2**30, allocator="cpu")
++    free, total = torch.cuda.mem_get_info(device)
++    allocated = torch.cuda.memory_allocated(device)
++    reserved = torch.cuda.memory_reserved(device)
++    stats = torch.cuda.memory_stats(device)
++    active = max(allocated, stats.get("active_bytes.all.current", allocated))
++    reusable = max(0, reserved-active)
++    return dict(free=free, total=total, allocated=allocated, reserved=reserved,
++                active_bytes=active, reusable_cache_bytes=reusable,
++                available_bytes=min(total, free+reusable),
++                allocator=torch.cuda.memory.get_allocator_backend())
++
++
++def mlp_budget(context, device):
++    # Attention temporaries have died before MLP. At this point actual allocator
++    # occupancy also includes expanded reference/keyframe tokens and weights.
++    # No D2H tensor reads or collectives; ranks may choose different chunk sizes.
++    if device.type != "cuda":
++        return context.get("mlp_budget_bytes", 256*2**20), {}
++    snapshot = available_memory(device)
++    pending_prefetch = context.get("effective_prefetch", 0)*context.get("active_group_estimate_bytes", 0)
++    budget = max(0, snapshot["available_bytes"]-context.get("reserve_bytes", 0)-pending_prefetch)
++    return budget, dict(budget_source="live allocator at MLP entry",
++                        reusable_cache_bytes=snapshot["reusable_cache_bytes"],
++                        pending_prefetch_allowance_bytes=pending_prefetch)
+ 
+ 
+ def mlp_plan(tokens, hidden, expansion, mode, requested, budget_bytes=None, prepared_bytes=0):
+@@ -13,25 +50,37 @@
+     elif mode == "auto":
+         chunk = max(1, min(tokens, available // row_bytes))
+         # Не округлять короткие/последние порции до нуля.
+-        if chunk >= 256:
++        if 256 <= chunk < tokens:
+             chunk = chunk // 256 * 256
+-        reason = "auto: локальные tokens, FP32 workspace, reserve, активные веса/prefetch"
++        # A pessimistic estimate must never turn 50 blocks into hundreds of
++        # thousands of single-token GEMMs. Attempt a bounded minimum chunk;
++        # a real allocation failure remains an explicit CUDA OOM.
++        floor = min(max(1, tokens), max(1, requested), 256)
++        floor_used = chunk < floor
++        chunk = max(chunk, floor)
++        reason = "auto: доступная память с повторным использованием CUDA cache"
++        if floor_used:
++            reason += "; оценка исчерпана, минимальный chunk вместо token=1"
+     else:
+         raise ValueError("Неизвестная MLP policy")
+     return dict(mode=mode, requested_tokens=requested, effective_tokens=min(chunk, max(1,tokens)),
+                 local_tokens=tokens, chunks=math.ceil(tokens/chunk), workspace_bytes_per_token=row_bytes,
+                 estimated_chunk_workspace_bytes=min(tokens,chunk)*row_bytes,
+                 budget_bytes=budget_bytes, prepared_weight_bytes=prepared_bytes, reason=reason,
+-                estimate_not_measurement=True)
++                estimate_not_measurement=True,
++                estimate_exhausted=mode == "auto" and floor_used)
+ 
+ 
+-def plan_forward(free_bytes, reserve_bytes, activation_bytes, communication_bytes, group_bytes, prefetch_limit, policy):
+-    after_activations = max(0, free_bytes-reserve_bytes-activation_bytes-communication_bytes)
++def plan_forward(free_bytes, reserve_bytes, activation_bytes, communication_bytes, group_bytes, prefetch_limit, policy,
++                 reusable_bytes=0):
++    available = free_bytes+max(0, reusable_bytes)
++    after_activations = max(0, available-reserve_bytes-activation_bytes-communication_bytes)
+     effective = prefetch_limit
+     if policy == "auto":
+         effective = max(0,min(prefetch_limit,after_activations//max(1,group_bytes)-1))
+     workspace = max(0,after_activations-(1+effective)*group_bytes)
+     return dict(policy=policy, free_at_boundary=free_bytes, reserve_bytes=reserve_bytes,
++        reusable_cache_bytes=max(0, reusable_bytes), available_at_boundary=available,
+         activation_estimate_bytes=activation_bytes, communication_estimate_bytes=communication_bytes,
+         active_group_estimate_bytes=group_bytes, requested_prefetch=prefetch_limit,
+         effective_prefetch=effective, mlp_budget_bytes=workspace,
+--- a/powershard/nodes.py
++++ b/powershard/nodes.py
+@@ -11,7 +11,7 @@
+             "gpu_ids": ("STRING", {"default": "all", "tooltip": "all или CUDA-visible индексы: 5,2,0. Порядок задаёт ranks."}),
+             "weight_placement": (["gpu", "cpu", "ats"], {"default": "gpu", "tooltip": "gpu: постоянные shards в VRAM. cpu: shards в pinned RAM, активный блок на GPU. ats: CUDA Unified Memory shards, аппаратный ATS обязателен; экспериментальный."}),
+             "precision": (["fp16", "int8_fp16"], {"default": "fp16"}),
+-            "attention_backend": (["auto", "vllm_flash_attn", "flash_attn", "sdpa", "math", "sageattention"], {"default": "auto", "tooltip": "auto проверяет custom vLLM FA, FA, SDPA, math на каждой карте. Sage только явно. Эффективный backend записывается в лог."}),
++            "attention_backend": (["auto", "vllm_flash_attn", "flash_attn", "sdpa", "math", "sageattention"], {"default": "auto", "tooltip": "auto проверяет custom vLLM FA, FA, SDPA, math на каждой карте. При разрешённом fallback отсутствующий flash_attn также проверяет vllm_flash_attn. auto не выбирает по скорости. Фактические вызовы по группам — в статусе/логах."}),
+             "sequence_mode": (["token", "ulysses"], {"default": "token", "tooltip": "token: полный K/V gather. Ulysses: head all-to-all с padding, любое число GPU (3/4/5/6 и т.д.)."})}}
+     RETURN_TYPES = ("POWERSHARD_CONFIG",)
+     FUNCTION = "create"
+--- a/powershard/operations.py
++++ b/powershard/operations.py
+@@ -4,6 +4,26 @@
+ import torch
+ from torch import nn
+ from torch.nn import functional as F
++
++
++def checkpoint_row_bounds(piece, tile_rows=256):
++    """Bounds of stored half weights, using bounded CPU tiles during loading."""
++    if piece.device.type != "cpu" or piece.ndim != 2:
++        raise ValueError("Weight bounds require a two-dimensional CPU checkpoint shard")
++    maximum, row_sum = 0., 0.
++    for start in range(0, piece.shape[0], tile_rows):
++        values = piece[start:start+tile_rows].to(torch.float16).float().abs()
++        maximum = max(maximum, float(values.max()))
++        row_sum = max(row_sum, float(values.sum(-1).max()))
++    return maximum, row_sum
++
++
++def matmul_constants(maximum, row_sum, in_features):
++    import math
++    sb = 2.**max(0, math.ceil(math.log2(max(1., maximum/16384.))))
++    # Half rounding/underflow cannot invalidate the absolute-sum bound.
++    bound = row_sum/sb*1.001+in_features*2.**-24
++    return sb, bound
+ 
+ 
+ class Linear(nn.Linear):
+@@ -18,7 +38,7 @@
+             else:
+                 from .fp16_safe import safe_linear
+                 if prepared is None:
+-                    out = safe_linear(x, self.weight, self.bias)
++                    out = safe_linear(x, self.weight, self.bias, getattr(self, "_ps_weight_bounds", None))
+                 else:
+                     from .fp16_safe import prepared_matmul
+                     out = prepared_matmul(x, prepared)
+@@ -143,9 +163,11 @@
+     scaled-half tiles. Не меняет FSDP representation и не вызывает collectives.
+     """
+     from .fp16_safe import prepare_matmul
+-    size = sum(m.in_features*m.out_features*2 for m in modules)
+-    staging = max((16*m.in_features*(min(m.rows,m.out_features) if isinstance(m,Int8Linear)
+-                    else m.out_features) for m in modules),default=0)
++    bounded = [not isinstance(m, Int8Linear) and getattr(m, "_ps_weight_bounds", (None,))[0] == 1.
++               for m in modules]
++    size = sum(m.in_features*m.out_features*2 for m, reuse in zip(modules, bounded) if not reuse)
++    staging = max((0 if reuse else 16*m.in_features*(min(m.rows,m.out_features) if isinstance(m,Int8Linear)
++                    else m.out_features) for m, reuse in zip(modules, bounded)),default=0)
+     use = enabled and size+staging <= budget and all(getattr(m,"_ps_safe",False) and not m._ps_fp32 for m in modules)
+     info = dict(prepared_weight_bytes=size if use else 0, preparation_peak_estimate=size+staging if use else 0,
+                 preparation="active MLP, reused across token chunks" if use else "per-call tiles; preparation budget insufficient or one chunk")
+@@ -161,7 +183,7 @@
+                         del w
+                     m._ps_prepared=tiles
+                 else:
+-                    m._ps_prepared=prepare_matmul(m.weight.T)
++                    m._ps_prepared=prepare_matmul(m.weight.T, getattr(m, "_ps_weight_bounds", None))
+         yield info
+     finally:
+         for m in modules:
+--- a/powershard/qwen.py
++++ b/powershard/qwen.py
+@@ -110,12 +110,16 @@
+ 
+ 
+ def qwen_mlp(self,x):
+-    from .memory_policy import mlp_plan
++    from .memory_policy import mlp_plan, mlp_budget
+     from .operations import prepared_linears
+     shape=x.shape;rows=x.reshape(-1,shape[-1]);options=self._ps_qwen_options
+-    budget=self._ps_memory_context.get("mlp_budget_bytes",256*2**20)
++    budget, budget_info=mlp_budget(self._ps_memory_context, x.device)
+     output_bytes=rows.numel()*4
+     plan=mlp_plan(len(rows),shape[-1],self.down_proj.in_features,options.mlp_chunk_mode,options.mlp_chunk_tokens,max(0,budget-output_bytes))
++    plan.update(budget_info)
++    self._ps_mlp_report=plan
++    if self._ps_memory_context.get("_progress"):
++        self._ps_memory_context["_progress"]("mlp_plan", dict(module=self._ps_name, **plan))
+     plan["full_output_bytes"]=output_bytes
+     out=torch.empty_like(rows,dtype=torch.float32)
+     allowance=max(0,budget-plan["estimated_chunk_workspace_bytes"]-out.numel()*4)
+@@ -140,6 +144,7 @@
+     from safetensors import safe_open
+     reader=safe_open(str(checkpoint.path),framework="pt",device="cpu") if checkpoint else None
+     for i,layer in enumerate(net.model.layers):
++        layer.mlp._ps_name=f"model.layers.{i}.mlp"
+         layer.mlp._ps_qwen_options=options or QwenConfig()
+         layer.mlp._ps_memory_context={}
+         layer.mlp.forward=types.MethodType(qwen_mlp,layer.mlp)
+--- a/powershard/qwen_backend.py
++++ b/powershard/qwen_backend.py
+@@ -76,15 +76,17 @@
+         start=time.perf_counter()
+         self.ledger.reset()
+         if self.device.type=="cuda":torch.cuda.reset_peak_memory_stats(self.device)
+-        from .memory_policy import plan_forward
++        from .memory_policy import plan_forward, available_memory
+         # Native image/video expansion зависит от processor; неизвестная добавка
+         # не выдумывается. Фактические expanded shapes публикуются после encoding.
+         text_tokens=sum(len(row) for row in args[0].get("qwen3vl_32b",[]))
+         hidden=self.root.network.model.embed_tokens.weight.shape[-1]
+-        free=torch.cuda.mem_get_info(self.device)[0] if self.device.type=="cuda" else 2**30
+-        plan=plan_forward(free,int(self.config.reserve_gib*2**30),text_tokens*hidden*24,
++        snapshot=available_memory(self.device)
++        plan=plan_forward(snapshot["free"],int(self.config.reserve_gib*2**30),text_tokens*hidden*24,
+             text_tokens*hidden*8 if self.config.backend=="fsdp2_sequence" else 0,
+-            max(self.group_bytes,default=0),self.config.prefetch_blocks,self.config.memory_policy)
++            max(self.group_bytes,default=0),self.config.prefetch_blocks,self.config.memory_policy,
++            reusable_bytes=snapshot["reusable_cache_bytes"])
++        plan["allocator"]=snapshot["allocator"]
+         plan["vision_expansion_estimate"]="UNKNOWN before native processor; estimate is a lower bound"
+         if self.config.memory_policy=="auto":
+             vote=torch.tensor([plan["effective_prefetch"],plan["mlp_budget_bytes"]],device=self.device,dtype=torch.int64)
+@@ -92,8 +94,12 @@
+             plan["effective_prefetch"],plan["mlp_budget_bytes"]=vote.cpu().tolist()
+             for chain in (self.root.network.model.layers,self.root.network.visual.blocks):
+                 for i,unit in enumerate(chain):unit.set_modules_to_forward_prefetch(list(chain[i+1:i+1+plan["effective_prefetch"]]))
++        self.memory_context=dict(plan)
++        if getattr(self,"progress",None):
++            self.progress("memory_plan",plan)
++            self.memory_context["_progress"]=self.progress
+         for layer in self.root.network.model.layers:
+-            layer.mlp._ps_memory_context=plan
++            layer.mlp._ps_memory_context=self.memory_context
+             state=getattr(layer.self_attn,"_ps_qwen_sequence",{})
+             state.update(kv_all_gathers=0,hidden_all_gathers=0,enabled=False)
+         with torch.inference_mode(False),torch.no_grad():
+--- a/powershard/reporting.py
++++ b/powershard/reporting.py
+@@ -33,5 +33,10 @@
+         commit=subprocess.check_output(["git","-C",str(Path(__file__).resolve().parents[1]),"rev-parse","HEAD"],text=True,stderr=subprocess.DEVNULL,timeout=3).strip()
+     except (OSError,subprocess.SubprocessError):commit="UNKNOWN"
+     torch=sys.modules.get("torch")
++    source=hashlib.sha256()
++    directory=Path(__file__).resolve().parent
++    for path in sorted([*directory.glob("*.py"),*directory.glob("*.cpp")]):
++        source.update(path.name.encode()); source.update(path.read_bytes())
+     return dict(powershard=__version__,commit=commit,python=sys.version,architecture=platform.machine(),
++                source_sha256=source.hexdigest(),
+                 torch=getattr(torch,"__version__",None),torch_cuda=getattr(getattr(torch,"version",None),"cuda",None))
+--- a/powershard/runtime.py
++++ b/powershard/runtime.py
+@@ -229,7 +229,17 @@
+                 self.history[-1]["command"] = command
+                 self.last_memory = max(r.get("metrics", {}).get("memory", {}).get("allocated", 0) for r in response)
+                 return result
+-            except BaseException:
++            except BaseException as error:
++                if "start" in locals() and self.path is not None:
++                    partial = []
++                    for rank in range(len(self.processes)):
++                        path=self.report_dir/f"{self.path.name}-rank{rank}-progress.json"
++                        try:
++                            value=json.loads(path.read_text())
++                            if value.get("sequence")==self.sequence:partial.append(value)
++                        except (OSError,ValueError):pass
++                    self.history.append(dict(sequence=self.sequence,command=command,status="INTERRUPTED_OR_FAILED",
++                        error_type=type(error).__name__,elapsed_s=time.perf_counter()-start,rank_progress=partial))
+                 self.close()
+                 raise
+             finally:
+@@ -336,6 +346,7 @@
+             steps=context["steps"],sigmas=context["sigmas"],
+             manifest=context.get("manifest",{}),
+             sampling_wall_s=time.perf_counter()-context["started"],
++            status=context.get("status","UNKNOWN"),
+             session_fingerprint=getattr(self,"fingerprint",None),
+             history=self.history[context["history_start"]:],
+             note="Sampling boundary only: text encoding/VAE/video encoding are separate phases; no raw prompt stored")
+--- a/powershard/spectrum_host.py
++++ b/powershard/spectrum_host.py
+@@ -63,6 +63,7 @@
+         raise
+     finally:
+         context=session.sampling_context
++        if context is not None:context["status"]="INTERRUPTED_OR_FAILED" if failed else "COMPLETE"
+         session.sampling_context=None
+         cleanup_error=None
+         try:
+--- a/powershard/telemetry.py
++++ b/powershard/telemetry.py
+@@ -1,6 +1,68 @@
+ """CPU counters/shapes без чтения CUDA tensors; trace ranges только по opt-in."""
+ from contextlib import nullcontext
+ import os
++import json
++import time
++from pathlib import Path
++
++
++class RequestProgress:
++    """Atomic CPU-only checkpoint that survives a killed/interrupted worker."""
++    def __init__(self, path, **identity):
++        self.path = Path(path)
++        self.identity = identity
++        self.current = {}
++
++    def begin(self, sequence, command):
++        self.current = dict(self.identity, sequence=sequence, command=command,
++                            status="RUNNING", started_unix_s=time.time())
++        self("stage", "input_transfer")
++
++    def __call__(self, key, value):
++        self.current[key] = value
++        self.current["updated_unix_s"] = time.time()
++        self.path.parent.mkdir(parents=True, exist_ok=True)
++        temporary = self.path.with_suffix(".tmp")
++        temporary.write_text(json.dumps(self.current, ensure_ascii=False))
++        temporary.replace(self.path)
++
++
++def profiler_summary(prof):
++    """Observed ATen operators and CUDA kernel names; not hardware counters."""
++    from collections import Counter
++    kernels, durations = Counter(), Counter()
++    for event in prof.events():
++        if str(getattr(event, "device_type", "")).endswith("CUDA"):
++            kernels[event.name] += 1
++            durations[event.name] += getattr(event, "device_time_total", 0.)
++    averages = prof.key_averages()
++    operators = {e.key: e.count for e in averages if any(x in e.key.lower()
++                 for x in ("scaled_dot_product", "flash_attn", "flashattention", "efficient_attention"))}
++    names = list(kernels)
++    return dict(cuda_kernel_count=sum(kernels.values()), attention_operators=operators,
++        attention_kernel_names=[n for n in names if any(x in n.lower() for x in ("flash", "fmha", "attention", "mha_fwd"))],
++        triton_kernel_names=[n for n in names if "triton" in n.lower()],
++        gemm_kernel_names=[n for n in names if any(x in n.lower() for x in ("gemm", "mma"))][:40],
++        top_cuda_kernels=[dict(name=n,count=kernels[n],total_us=t) for n,t in durations.most_common(20)],
++        note="Kernel names observed by profiler; duration sum ignores overlap; Tensor Core utilization needs hardware counters")
++
++
++def accelerator_inventory():
++    import importlib.metadata
++    import platform
++    import torch
++    from .reporting import environment_identity
++    packages = {}
++    for name in ("flash-attn", "vllm-flash-attn", "triton", "power-torch-cuda124", "torch"):
++        try: packages[name] = importlib.metadata.version(name)
++        except importlib.metadata.PackageNotFoundError: packages[name] = "NOT_INSTALLED"
++    return dict(environment=environment_identity(), packages=packages,
++        architecture=platform.machine(),
++        matmul=dict(allow_fp16_reduced_precision_reduction=torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction,
++                    allow_fp16_accumulation=getattr(torch.backends.cuda.matmul,"allow_fp16_accumulation",None)),
++        triton=dict(explicit_powershard_kernel_path=False, torch_compile=False,
++                    execution="NOT_USED_BY_POWERSHARD",
++                    note="Installed version does not prove execution. Custom attention providers may have their own kernels; inspect a CUDA trace."))
+ 
+ 
+ def region(name):
+--- /dev/null
++++ b/powershard/triton_smoke.py
+@@ -0,0 +1,18 @@
++"""Optional standalone JIT smoke. Not imported by workers or production nodes."""
++import triton
++import triton.language as tl
++import torch
++
++
++@triton.jit
++def _add(x,y,z,n:tl.constexpr,BLOCK:tl.constexpr):
++    indexes=tl.program_id(0)*BLOCK+tl.arange(0,BLOCK)
++    left=tl.load(x+indexes,mask=indexes<n,other=0.)
++    right=tl.load(y+indexes,mask=indexes<n,other=0.)
++    tl.store(z+indexes,left+right,mask=indexes<n)
++
++
++def add(x,y):
++    out=torch.empty_like(x)
++    _add[(triton.cdiv(x.numel(),256),)](x,y,out,x.numel(),BLOCK=256)
++    return out
+--- a/powershard/web_api.py
++++ b/powershard/web_api.py
+@@ -63,6 +63,35 @@
+     return tuple(result)
+ 
+ 
++def runtime_status():
++    from .runtime import _SESSIONS
++    import json
++    result=[]
++    for session in list(_SESSIONS):
++        metrics=[];progress=[]
++        for event in reversed(session.history):
++            rows=[r.get("metrics") for r in event.get("ranks",[]) if r.get("metrics")]
++            if rows:
++                metrics=rows
++                break
++        if session.path is not None:
++            for rank in range(len(session.processes)):
++                path=session.report_dir/f"{session.path.name}-rank{rank}-progress.json"
++                try:progress.append(json.loads(path.read_text()))
++                except (OSError,ValueError):pass
++        result.append(dict(role=session.role,running=session.running,
++            requested=session.config.requested_attention,
++            selected=(session.attention_policy or {}).get("effective"),
++            placement=session.config.weight_placement,
++            gpu_ids=list(session.config.gpu_ids),
++            ranks=[dict(rank=i,memory=m.get("memory"),attention=m.get("attention",{}).get("effective_used"),
++                        weights=m.get("weight_memory",dict(cpu_shard_bytes=m.get("cpu_shard_bytes",0),
++                                    persistent_shard_bytes=m.get("persistent_shard_bytes",0))),
++                        mlp_chunks=sorted(set(v.get("effective_tokens",0) for v in m.get("mlp",{}).values())))
++                   for i,m in enumerate(metrics)], progress=progress))
++    return result
++
++
+ def register_routes():
+     # Проверяется наличие server, а не версия. Standalone import остаётся lazy.
+     server=sys.modules.get("server")
+@@ -86,4 +115,8 @@
+             return web.json_response(dict(graph=graph, changes=changes))
+         except (ValueError, KeyError, TypeError, IndexError) as error:
+             return web.json_response(dict(error=str(error)), status=400)
++    @instance.routes.get("/powershard/status")
++    async def status(request):
++        return web.json_response(dict(sessions=runtime_status(),
++            note="Последний завершённый RPC и текущий progress; installed/selected не доказывают фактический CUDA kernel. Triton не вызывается PowerShard."))
+     instance._powershard_routes=True
+--- a/powershard/worker.py
++++ b/powershard/worker.py
+@@ -42,11 +42,11 @@
+             raise RuntimeError("CUDA-visible mapping worker не совпал с выбранным набором")
+         torch.cuda.set_device(rank)
+         device = torch.device("cuda", rank)
+-        # Worker-local numerical policy: reduced half accumulation can overflow
+-        # even when the compensated result has a finite FP32 reference.
+-        torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
+-        if hasattr(torch.backends.cuda.matmul, "allow_fp16_accumulation"):
+-            torch.backends.cuda.matmul.allow_fp16_accumulation = False
++        # Scaled safe GEMMs bound the absolute sum to 16384 (<65504), including
++        # partial reductions. Allow the faster cuBLAS reductions on Volta;
++        # full-half accumulation remains disabled for numerical accuracy.
++        from .fp16_safe import configure_matmul
++        configure_matmul(patch.active or settings.get("role") == "qwen")
+         managed_pool = None
+         if config.weight_placement == "ats":
+             from .ats_memory import ManagedShardPool
+@@ -93,6 +93,8 @@
+                     communication_dtype="FSDP parameter dtype; sequence KV/hidden FP32")
+             check["torch"] = torch.__version__
+             check["torch_cuda"] = torch.version.cuda
++            from .telemetry import accelerator_inventory
++            check["accelerators"] = accelerator_inventory()
+             check["compute_capability"] = cap
+             check["shards"] = backend.shards
+             check["loaded_memory"] = backend.loaded_memory
+@@ -124,6 +126,11 @@
+         # и переносятся на device ОДИН раз за run; последующие шаги берут
+         # готовые GPU-тензоры. Кэш сбрасывается, когда меняется stage-каталог.
+         stage_cache = {"dir": None, "tensors": {}}
++        from .telemetry import RequestProgress
++        progress = RequestProgress(Path(settings["report_dir"])/f"{Path(settings['session_dir']).name}-rank{rank}-progress.json",
++                                   rank=rank, pid=os.getpid(), uuid=settings["gpu_uuids"][rank])
++        if backend is not None:backend.progress=progress
++        profiled = {}
+         for line in sys.stdin:
+             req = json.loads(line)
+             if req["command"] == "shutdown":
+@@ -145,6 +152,7 @@
+                 respond({"sequence":req["sequence"],"spectrum_end_run":report})
+                 continue
+             stage_dir = req.get("stage") or None
++            progress.begin(req["sequence"],req["command"])
+             if stage_dir != stage_cache["dir"]:
+                 stage_cache["dir"] = stage_dir
+                 stage_cache["tensors"] = {}
+@@ -153,7 +161,9 @@
+                                    stage_cache=stage_cache["tensors"] if stage_dir else None)
+             torch.cuda.synchronize(device)
+             transfer_s = time.perf_counter()-start
+-            if os.environ.get("POWERSHARD_PROFILE") == "1" and req["sequence"] <= 2:
++            progress("input_transfer_s",transfer_s)
++            profile_limit = max(1,int(os.environ.get("POWERSHARD_PROFILE_FORWARDS","1")))
++            if os.environ.get("POWERSHARD_PROFILE") == "1" and profiled.get(req["command"],0) < profile_limit:
+                 with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
+                                              record_shapes=True,profile_memory=True) as prof:
+                     result, metrics = backend.call(req["command"], payload["args"], payload["kwargs"])
+@@ -161,19 +171,33 @@
+                 trace = Path(settings["report_dir"]) / f"{session_name}-rank{rank}-seq{sequence}.trace.json"
+                 prof.export_chrome_trace(str(trace))
+                 metrics["profiler_trace"] = str(trace)
++                from .telemetry import profiler_summary
++                metrics["kernels"] = profiler_summary(prof)
++                profiled[req["command"]] = profiled.get(req["command"],0)+1
+                 metrics["collective_events"] = [dict(name=e.key,count=e.count,cpu_total_us=e.cpu_time_total,
+                     device_total_us=getattr(e,"device_time_total",None)) for e in prof.key_averages()
+-                    if any(word in e.key.lower() for word in ("nccl","all_gather","allgather","all_reduce"))]
++                    if any(word in e.key.lower() for word in ("nccl","all_gather","allgather","all_reduce","all_to_all","alltoall"))]
+                 metrics["collective_timing_note"] = "Вложенные/overlapped events; не суммировать с forward wall time"
+             else:
+                 result, metrics = backend.call(req["command"], payload["args"], payload["kwargs"])
+             metrics["input_transfer_s"] = transfer_s
++            progress("forward_s",metrics["forward_s"])
++            progress("memory",metrics["memory"])
++            progress("status","FORWARD_COMPLETE")
++            if rank == 0:
++                print(json.dumps(dict(event="powershard_rpc", sequence=req["sequence"], command=req["command"],
++                    forward_s=metrics["forward_s"], memory=metrics["memory"],
++                    attention_calls=metrics.get("attention",{}).get("call_counts"),
++                    sequence_communication=metrics.get("sequence_communication")),ensure_ascii=False),file=sys.stderr)
+             if rank == 0:
+                 write_payload(req["output"], result)
+             del result, payload
++            progress("status","COMPLETE")
+             respond({"sequence": req["sequence"], "metrics": metrics})
+     except BaseException:
+         error = traceback.format_exc()
++        if "progress" in locals():
++            progress("error",error[-4000:]); progress("status","FAILED")
+         print(error, file=sys.stderr)
+         respond({"error": error})
+         return 1
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -3,7 +3,7 @@
+ build-backend = "setuptools.build_meta"
+ [project]
+ name = "comfyui-powershard"
+-version = "0.5.0"
++version = "0.5.1"
+ description = "H3 FSDP2 inference для выбранного CUDA GPU набора"
+ requires-python = ">=3.10"
+ license = {file = "LICENSE"}
+--- /dev/null
++++ b/reports/performance-0.5.1/comfy-contract-cpu.json
+@@ -0,0 +1,18 @@
++{
++  "status": "PASS",
++  "device": "CPU x86_64",
++  "sampler": "native ComfyUI Euler/simple CFG=1",
++  "steps": 2,
++  "seeds": [
++    5,
++    6,
++    5
++  ],
++  "audio_video": "PASS",
++  "clone_model_options": "PASS",
++  "seed_change_repeat": "PASS",
++  "reject_patch_before_RPC": "PASS",
++  "transport": "TEST_LOCAL_CONTRACT_ONLY",
++  "distributed_CUDA": "NOT_RUN",
++  "real_checkpoint": "NOT_RUN"
++}
+\ No newline at end of file
+--- /dev/null
++++ b/reports/performance-0.5.1/pytest.log
+@@ -0,0 +1,5 @@
++........................................................................ [ 28%]
++........................................................................ [ 56%]
++.........................................................sssssssssssssss [ 84%]
++s......................................                                  [100%]
++239 passed, 16 skipped in 23.56s
+--- /dev/null
++++ b/reports/performance-0.5.1/pytest.xml
+@@ -0,0 +1 @@
++<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="16" tests="255" time="23.554" timestamp="2026-10-04T18:19:54.441494+02:00" hostname="431ac6d4d0b6"><testcase classname="tests.test_attention_contract" name="test_math_rectangular_gqa[upper_left-False-0.0]" time="0.334" /><testcase classname="tests.test_attention_contract" name="test_math_rectangular_gqa[upper_left-False-0.13]" time="0.002" /><testcase classname="tests.test_attention_contract" name="test_math_rectangular_gqa[upper_left-False-0.7]" time="0.003" /><testcase classname="tests.test_attention_contract" name="test_math_rectangular_gqa[upper_left-False--0.1]" time="0.002" /><testcase classname="tests.test_attention_contract" name="test_math_rectangular_gqa[upper_left-True-0.0]" time="0.002" /><testcase classname="tests.test_attention_contract" name="test_math_rectangular_gqa[upper_left-True-0.13]" time="0.002" /><testcase classname="tests.test_attention_contract" name="test_math_rectangular_gqa[upper_left-True-0.7]" time="0.002" /><testcase classname="tests.test_attention_contract" name="test_math_rectangular_gqa[upper_left-True--0.1]" time="0.002" /><testcase classname="tests.test_attention_contract" name="test_math_rectangular_gqa[bottom_right-False-0.0]" time="0.002" /><testcase classname="tests.test_attention_contract" name="test_math_rectangular_gqa[bottom_right-False-0.13]" time="0.002" /><testcase classname="tests.test_attention_contract" name="test_math_rectangular_gqa[bottom_right-False-0.7]" time="0.002" /><testcase classname="tests.test_attention_contract" name="test_math_rectangular_gqa[bottom_right-False--0.1]" time="0.002" /><testcase classname="tests.test_attention_contract" name="test_math_rectangular_gqa[bottom_right-True-0.0]" time="0.002" /><testcase classname="tests.test_attention_contract" name="test_math_rectangular_gqa[bottom_right-True-0.13]" time="0.002" /><testcase classname="tests.test_attention_contract" name="test_math_rectangular_gqa[bottom_right-True-0.7]" time="0.002" /><testcase classname="tests.test_attention_contract" name="test_math_rectangular_gqa[bottom_right-True--0.1]" time="0.002" /><testcase classname="tests.test_attention_contract" name="test_masks_windows_alibi[bool]" time="0.002" /><testcase classname="tests.test_attention_contract" name="test_masks_windows_alibi[additive]" time="0.002" /><testcase classname="tests.test_attention_contract" name="test_masks_windows_alibi[window]" time="0.002" /><testcase classname="tests.test_attention_contract" name="test_masks_windows_alibi[alibi]" time="0.002" /><testcase classname="tests.test_attention_contract" name="test_custom_dense_cross_gqa_batch_noncontiguous[1-0.12]" time="0.204" /><testcase classname="tests.test_attention_contract" name="test_custom_dense_cross_gqa_batch_noncontiguous[1-0.9]" time="0.109" /><testcase classname="tests.test_attention_contract" name="test_custom_dense_cross_gqa_batch_noncontiguous[2-0.12]" time="0.110" /><testcase classname="tests.test_attention_contract" name="test_custom_dense_cross_gqa_batch_noncontiguous[2-0.9]" time="0.110" /><testcase classname="tests.test_attention_contract" name="test_custom_dense_cross_gqa_batch_noncontiguous[4-0.12]" time="0.107" /><testcase classname="tests.test_attention_contract" name="test_custom_dense_cross_gqa_batch_noncontiguous[4-0.9]" time="0.113" /><testcase classname="tests.test_attention_contract" name="test_unequal_varlen_batch" time="0.115" /><testcase classname="tests.test_attention_contract" name="test_unsupported_scale_not_silently_dropped" time="0.108" /><testcase classname="tests.test_attention_contract" name="test_fallback_rectangular_mask_return_and_strict" time="0.204" /><testcase classname="tests.test_attention_contract" name="test_dropout_forwarded_and_unknown_kwargs" time="0.109" /><testcase classname="tests.test_attention_contract" name="test_fully_masked_rows_zero_but_nan_not_hidden" time="0.003" /><testcase classname="tests.test_attention_contract" name="test_fatal_runtime_not_fallback" time="0.001" /><testcase classname="tests.test_attention_contract" name="test_sdpa_scale_reference" time="0.001" /><testcase classname="tests.test_attention_h3" name="test_safe_sdpa_real_h3_attention_and_counters" time="0.580" /><testcase classname="tests.test_benchmark" name="test_execution_measurement[False]" time="0.011" /><testcase classname="tests.test_benchmark" name="test_execution_measurement[True]" time="0.007" /><testcase classname="tests.test_devices" name="test_any_world[1]" time="0.001" /><testcase classname="tests.test_devices" name="test_any_world[2]" time="0.001" /><testcase classname="tests.test_devices" name="test_any_world[3]" time="0.000" /><testcase classname="tests.test_devices" name="test_any_world[4]" time="0.000" /><testcase classname="tests.test_devices" name="test_any_world[5]" time="0.000" /><testcase classname="tests.test_devices" name="test_any_world[6]" time="0.001" /><testcase classname="tests.test_devices" name="test_any_world[12]" time="0.001" /><testcase classname="tests.test_devices" name="test_order_all_visible_and_duplicates" time="0.001" /><testcase classname="tests.test_devices" name="test_legacy_widgets_order_and_new_optional_defaults" time="0.001" /><testcase classname="tests.test_devices" name="test_inventory_subprocess_from_comfy_cwd" time="1.108" /><testcase classname="tests.test_fp16_safe" name="test_old_condition_overflow_and_safe_fp32" time="0.001" /><testcase classname="tests.test_fp16_safe" name="test_scaled_projection_and_bias[1.0]" time="0.001" /><testcase classname="tests.test_fp16_safe" name="test_scaled_projection_and_bias[1000.0]" time="0.001" /><testcase classname="tests.test_fp16_safe" name="test_scaled_projection_and_bias[1000000.0]" time="0.001" /><testcase classname="tests.test_fp16_safe" name="test_checkpoint_bounds_keep_large_outputs_finite_without_weight_reductions[0.1]" time="0.001" /><testcase classname="tests.test_fp16_safe" name="test_checkpoint_bounds_keep_large_outputs_finite_without_weight_reductions[20000.0]" time="0.001" /><testcase classname="tests.test_fp16_safe" name="test_attention_matmuls_large_values" time="0.002" /><testcase classname="tests.test_fp16_safe" name="test_int8_convrot_scaled_storage" time="0.002" /><testcase classname="tests.test_fp16_safe" name="test_deferred_check_no_tensor_item_until_boundary" time="0.001" /><testcase classname="tests.test_fp16_safe" name="test_policy_serialization" time="0.000" /><testcase classname="tests.test_fp16_safe" name="test_h3_residual_mlp_condition_and_idempotency" time="0.016" /><testcase classname="tests.test_fp16_safe" name="test_full_h3_safe_matches_fp32[text]" time="0.020" /><testcase classname="tests.test_fp16_safe" name="test_full_h3_safe_matches_fp32[masks]" time="0.020" /><testcase classname="tests.test_fp16_safe" name="test_full_h3_safe_matches_fp32[fl2va]" time="0.021" /><testcase classname="tests.test_fp16_safe" name="test_full_h3_safe_matches_fp32[ref2va]" time="0.021" /><testcase classname="tests.test_fp16_safe" name="test_full_h3_safe_matches_fp32[audio_scale]" time="0.019" /><testcase classname="tests.test_fp16_safe" name="test_native_h3_int8_convrot256_safe_forward" time="0.054" /><testcase classname="tests.test_fp16_safe" name="test_safe_vector_linear" time="0.001" /><testcase classname="tests.test_fp16_safe" name="test_quantized_native_fp32_island_is_preserved" time="0.001" /><testcase classname="tests.test_mlp_policy" name="test_mlp_modes_match_unchunked[manual-1-False]" time="0.004" /><testcase classname="tests.test_mlp_policy" name="test_mlp_modes_match_unchunked[manual-1-True]" time="0.010" /><testcase classname="tests.test_mlp_policy" name="test_mlp_modes_match_unchunked[manual-4-False]" time="0.003" /><testcase classname="tests.test_mlp_policy" name="test_mlp_modes_match_unchunked[manual-4-True]" time="0.006" /><testcase classname="tests.test_mlp_policy" name="test_mlp_modes_match_unchunked[manual-1024-False]" time="0.003" /><testcase classname="tests.test_mlp_policy" name="test_mlp_modes_match_unchunked[manual-1024-True]" time="0.004" /><testcase classname="tests.test_mlp_policy" name="test_mlp_modes_match_unchunked[manual-4096-False]" time="0.002" /><testcase classname="tests.test_mlp_policy" name="test_mlp_modes_match_unchunked[manual-4096-True]" time="0.004" /><testcase classname="tests.test_mlp_policy" name="test_mlp_modes_match_unchunked[manual-8192-False]" time="0.002" /><testcase classname="tests.test_mlp_policy" name="test_mlp_modes_match_unchunked[manual-8192-True]" time="0.004" /><testcase classname="tests.test_mlp_policy" name="test_mlp_modes_match_unchunked[manual-16384-False]" time="0.002" /><testcase classname="tests.test_mlp_policy" name="test_mlp_modes_match_unchunked[manual-16384-True]" time="0.004" /><testcase classname="tests.test_mlp_policy" name="test_mlp_modes_match_unchunked[off-512-False]" time="0.002" /><testcase classname="tests.test_mlp_policy" name="test_mlp_modes_match_unchunked[off-512-True]" time="0.004" /><testcase classname="tests.test_mlp_policy" name="test_mlp_modes_match_unchunked[auto-512-False]" time="0.002" /><testcase classname="tests.test_mlp_policy" name="test_mlp_modes_match_unchunked[auto-512-True]" time="0.004" /><testcase classname="tests.test_mlp_policy" name="test_preparation_is_once_per_active_mlp" time="0.006" /><testcase classname="tests.test_mlp_policy" name="test_preparation_releases_after_error" time="0.001" /><testcase classname="tests.test_mlp_policy" name="test_memory_estimate_never_rejects_manual" time="0.000" /><testcase classname="tests.test_mlp_policy" name="test_auto_does_not_create_a_tiny_tail_when_all_tokens_fit" time="0.000" /><testcase classname="tests.test_mlp_policy" name="test_next_step_reuses_cache_from_uploaded_runs[3585671168-11750342656-294539776]" time="0.001" /><testcase classname="tests.test_mlp_policy" name="test_next_step_reuses_cache_from_uploaded_runs[4336058368-10869538816-294539776]" time="0.001" /><testcase classname="tests.test_mlp_policy" name="test_next_step_reuses_cache_from_uploaded_runs[5019795456-10536091648-294539776]" time="0.001" /><testcase classname="tests.test_mlp_policy" name="test_pending_stream_blocks_are_not_credited" time="0.000" /><testcase classname="tests.test_native_pipeline" name="test_worker_patch_extra_conds_and_sampler" time="8.723" /><testcase classname="tests.test_native_pipeline" name="test_capabilities_accept_current_and_missing_method" time="0.001" /><testcase classname="tests.test_offload_config" name="test_offload_prefetch_config" time="0.001" /><testcase classname="tests.test_offload_config" name="test_linux_topology_helpers" time="0.011" /><testcase classname="tests.test_offload_config" name="test_all_workflows_patch_both_model_consumers" time="0.003" /><testcase classname="tests.test_portable" name="test_import_without_torch" time="0.029" /><testcase classname="tests.test_portable" name="test_partition[1-0]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[1-1]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[1-2]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[1-3]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[1-4]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[1-7]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[1-56]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[1-5376]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[1-21504]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[1-28672]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[2-0]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[2-1]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[2-2]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[2-3]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[2-4]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[2-7]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[2-56]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[2-5376]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[2-21504]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[2-28672]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[3-0]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[3-1]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[3-2]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[3-3]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[3-4]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[3-7]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[3-56]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[3-5376]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[3-21504]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[3-28672]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[4-0]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[4-1]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[4-2]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[4-3]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[4-4]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[4-7]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[4-56]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[4-5376]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[4-21504]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[4-28672]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[6-0]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[6-1]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[6-2]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[6-3]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[6-4]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[6-7]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[6-56]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[6-5376]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[6-21504]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[6-28672]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[11-0]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[11-1]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[11-2]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[11-3]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[11-4]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[11-7]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[11-56]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[11-5376]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[11-21504]" time="0.001" /><testcase classname="tests.test_portable" name="test_partition[11-28672]" time="0.001" /><testcase classname="tests.test_portable" name="test_config" time="0.000" /><testcase classname="tests.test_portable" name="test_attention[1]" time="0.002" /><testcase classname="tests.test_portable" name="test_attention[7]" time="0.002" /><testcase classname="tests.test_portable" name="test_attention[13]" time="0.003" /><testcase classname="tests.test_portable" name="test_attention[49]" time="0.013" /><testcase classname="tests.test_portable" name="test_convrot" time="0.003" /><testcase classname="tests.test_portable" name="test_overflow" time="0.001" /><testcase classname="tests.test_portable" name="test_wire" time="0.002" /><testcase classname="tests.test_portable" name="test_checkpoint_header_validation" time="0.001" /><testcase classname="tests.test_portable" name="test_real_metadata" time="0.211" /><testcase classname="tests.test_portable" name="test_native_wrapper_stripped" time="0.001" /><testcase classname="tests.test_progress" name="test_cancelled_rpc_preserves_chosen_mlp_and_failure_status" time="0.002" /><testcase classname="tests.test_progress" name="test_profile_distinguishes_operator_selection_from_kernel_observation" time="0.001" /><testcase classname="tests.test_qwen_native" name="test_native_qwen_encoder_conditioning[False-False]" time="0.019" /><testcase classname="tests.test_qwen_native" name="test_native_qwen_encoder_conditioning[False-True]" time="0.025" /><testcase classname="tests.test_qwen_native" name="test_native_qwen_encoder_conditioning[False-video]" time="0.024" /><testcase classname="tests.test_qwen_native" name="test_native_qwen_encoder_conditioning[True-False]" time="0.033" /><testcase classname="tests.test_qwen_native" name="test_native_qwen_encoder_conditioning[True-True]" time="0.042" /><testcase classname="tests.test_qwen_native" name="test_native_qwen_encoder_conditioning[True-video]" time="0.042" /><testcase classname="tests.test_qwen_native" name="test_real_header_native_geometry" time="0.028" /><testcase classname="tests.test_qwen_native" name="test_cache_bound_clone_and_hash" time="0.001" /><testcase classname="tests.test_qwen_native" name="test_native_clip_wrapper_cache_and_clone" time="0.342" /><testcase classname="tests.test_qwen_native" name="test_qwen_memory_plan_uses_per_layer_groups" time="0.004" /><testcase classname="tests.test_qwen_native" name="test_sequence_math_with_injected_collective_payloads[False-1]" time="0.016" /><testcase classname="tests.test_qwen_native" name="test_sequence_math_with_injected_collective_payloads[False-2]" time="0.019" /><testcase classname="tests.test_qwen_native" name="test_sequence_math_with_injected_collective_payloads[False-3]" time="0.020" /><testcase classname="tests.test_qwen_native" name="test_sequence_math_with_injected_collective_payloads[False-6]" time="0.025" /><testcase classname="tests.test_qwen_native" name="test_sequence_math_with_injected_collective_payloads[True-1]" time="0.017" /><testcase classname="tests.test_qwen_native" name="test_sequence_math_with_injected_collective_payloads[True-2]" time="0.019" /><testcase classname="tests.test_qwen_native" name="test_sequence_math_with_injected_collective_payloads[True-3]" time="0.019" /><testcase classname="tests.test_qwen_native" name="test_sequence_math_with_injected_collective_payloads[True-6]" time="0.024" /><testcase classname="tests.test_revision_config" name="test_three_distinct_memory_modes" time="0.001" /><testcase classname="tests.test_revision_config" name="test_minimal_config_and_legacy_conversion" time="0.001" /><testcase classname="tests.test_revision_config" name="test_ats_requires_host_page_tables_not_just_uva" time="0.001" /><testcase classname="tests.test_revision_config" name="test_custom_attention_probe_includes_padded_local_heads" time="0.001" /><testcase classname="tests.test_revision_config" name="test_auto_attention_tries_custom_provider_before_sdpa" time="0.000" /><testcase classname="tests.test_revision_config" name="test_missing_flash_extension_checks_installed_vllm_fallback" time="0.001" /><testcase classname="tests.test_revision_config" name="test_ats_native_pool_is_worker_local_and_preserves_allocator_options" time="0.001" /><testcase classname="tests.test_runtime_devices" name="test_spawn_count_order_cleanup[1]" time="0.007" /><testcase classname="tests.test_runtime_devices" name="test_spawn_count_order_cleanup[2]" time="0.007" /><testcase classname="tests.test_runtime_devices" name="test_spawn_count_order_cleanup[3]" time="0.007" /><testcase classname="tests.test_runtime_devices" name="test_spawn_count_order_cleanup[4]" time="0.007" /><testcase classname="tests.test_runtime_devices" name="test_spawn_count_order_cleanup[6]" time="0.008" /><testcase classname="tests.test_runtime_devices" name="test_spawn_count_order_cleanup[9]" time="0.008" /><testcase classname="tests.test_runtime_devices" name="test_rank_error_exit_and_cancel_are_not_suppressed" time="0.042" /><testcase classname="tests.test_runtime_devices" name="test_policy_common_to_all_ranks_and_sage_opt_in" time="0.001" /><testcase classname="tests.test_sequence_distributed" name="test_real_ulysses_collectives[3]" time="0.022"><skipped type="pytest.skip" message="NOT_RUN: environment forbids Gloo TCP transport">/workspace/scratch/db8d07f3d610/work/ComfyUI-PowerShard/tests/test_sequence_distributed.py:66: NOT_RUN: environment forbids Gloo TCP transport</skipped></testcase><testcase classname="tests.test_sequence_distributed" name="test_real_ulysses_collectives[4]" time="0.000"><skipped type="pytest.skip" message="NOT_RUN: environment forbids Gloo TCP transport">/workspace/scratch/db8d07f3d610/work/ComfyUI-PowerShard/tests/test_sequence_distributed.py:66: NOT_RUN: environment forbids Gloo TCP transport</skipped></testcase><testcase classname="tests.test_sequence_distributed" name="test_real_ulysses_collectives[5]" time="0.000"><skipped type="pytest.skip" message="NOT_RUN: environment forbids Gloo TCP transport">/workspace/scratch/db8d07f3d610/work/ComfyUI-PowerShard/tests/test_sequence_distributed.py:66: NOT_RUN: environment forbids Gloo TCP transport</skipped></testcase><testcase classname="tests.test_sequence_distributed" name="test_real_ulysses_collectives[6]" time="0.000"><skipped type="pytest.skip" message="NOT_RUN: environment forbids Gloo TCP transport">/workspace/scratch/db8d07f3d610/work/ComfyUI-PowerShard/tests/test_sequence_distributed.py:66: NOT_RUN: environment forbids Gloo TCP transport</skipped></testcase><testcase classname="tests.test_sequence_distributed" name="test_native_h3_sequence[token-math-3]" time="0.000"><skipped type="pytest.skip" message="NOT_RUN: environment forbids Gloo TCP transport">/workspace/scratch/db8d07f3d610/work/ComfyUI-PowerShard/tests/test_sequence_distributed.py:123: NOT_RUN: environment forbids Gloo TCP transport</skipped></testcase><testcase classname="tests.test_sequence_distributed" name="test_native_h3_sequence[token-math-4]" time="0.000"><skipped type="pytest.skip" message="NOT_RUN: environment forbids Gloo TCP transport">/workspace/scratch/db8d07f3d610/work/ComfyUI-PowerShard/tests/test_sequence_distributed.py:123: NOT_RUN: environment forbids Gloo TCP transport</skipped></testcase><testcase classname="tests.test_sequence_distributed" name="test_native_h3_sequence[token-math-5]" time="0.000"><skipped type="pytest.skip" message="NOT_RUN: environment forbids Gloo TCP transport">/workspace/scratch/db8d07f3d610/work/ComfyUI-PowerShard/tests/test_sequence_distributed.py:123: NOT_RUN: environment forbids Gloo TCP transport</skipped></testcase><testcase classname="tests.test_sequence_distributed" name="test_native_h3_sequence[token-math-6]" time="0.000"><skipped type="pytest.skip" message="NOT_RUN: environment forbids Gloo TCP transport">/workspace/scratch/db8d07f3d610/work/ComfyUI-PowerShard/tests/test_sequence_distributed.py:123: NOT_RUN: environment forbids Gloo TCP transport</skipped></testcase><testcase classname="tests.test_sequence_distributed" name="test_native_h3_sequence[ulysses-math-3]" time="0.001"><skipped type="pytest.skip" message="NOT_RUN: environment forbids Gloo TCP transport">/workspace/scratch/db8d07f3d610/work/ComfyUI-PowerShard/tests/test_sequence_distributed.py:123: NOT_RUN: environment forbids Gloo TCP transport</skipped></testcase><testcase classname="tests.test_sequence_distributed" name="test_native_h3_sequence[ulysses-math-4]" time="0.000"><skipped type="pytest.skip" message="NOT_RUN: environment forbids Gloo TCP transport">/workspace/scratch/db8d07f3d610/work/ComfyUI-PowerShard/tests/test_sequence_distributed.py:123: NOT_RUN: environment forbids Gloo TCP transport</skipped></testcase><testcase classname="tests.test_sequence_distributed" name="test_native_h3_sequence[ulysses-math-5]" time="0.000"><skipped type="pytest.skip" message="NOT_RUN: environment forbids Gloo TCP transport">/workspace/scratch/db8d07f3d610/work/ComfyUI-PowerShard/tests/test_sequence_distributed.py:123: NOT_RUN: environment forbids Gloo TCP transport</skipped></testcase><testcase classname="tests.test_sequence_distributed" name="test_native_h3_sequence[ulysses-math-6]" time="0.000"><skipped type="pytest.skip" message="NOT_RUN: environment forbids Gloo TCP transport">/workspace/scratch/db8d07f3d610/work/ComfyUI-PowerShard/tests/test_sequence_distributed.py:123: NOT_RUN: environment forbids Gloo TCP transport</skipped></testcase><testcase classname="tests.test_sequence_distributed" name="test_native_h3_sequence[ulysses-sdpa-3]" time="0.000"><skipped type="pytest.skip" message="NOT_RUN: environment forbids Gloo TCP transport">/workspace/scratch/db8d07f3d610/work/ComfyUI-PowerShard/tests/test_sequence_distributed.py:123: NOT_RUN: environment forbids Gloo TCP transport</skipped></testcase><testcase classname="tests.test_sequence_distributed" name="test_native_h3_sequence[ulysses-sdpa-4]" time="0.000"><skipped type="pytest.skip" message="NOT_RUN: environment forbids Gloo TCP transport">/workspace/scratch/db8d07f3d610/work/ComfyUI-PowerShard/tests/test_sequence_distributed.py:123: NOT_RUN: environment forbids Gloo TCP transport</skipped></testcase><testcase classname="tests.test_sequence_distributed" name="test_native_h3_sequence[ulysses-sdpa-5]" time="0.000"><skipped type="pytest.skip" message="NOT_RUN: environment forbids Gloo TCP transport">/workspace/scratch/db8d07f3d610/work/ComfyUI-PowerShard/tests/test_sequence_distributed.py:123: NOT_RUN: environment forbids Gloo TCP transport</skipped></testcase><testcase classname="tests.test_sequence_distributed" name="test_native_h3_sequence[ulysses-sdpa-6]" time="0.000"><skipped type="pytest.skip" message="NOT_RUN: environment forbids Gloo TCP transport">/workspace/scratch/db8d07f3d610/work/ComfyUI-PowerShard/tests/test_sequence_distributed.py:123: NOT_RUN: environment forbids Gloo TCP transport</skipped></testcase><testcase classname="tests.test_sequence_distributed" name="test_ulysses_tensor_permutation_reference[3]" time="0.051" /><testcase classname="tests.test_sequence_distributed" name="test_ulysses_tensor_permutation_reference[4]" time="0.153" /><testcase classname="tests.test_sequence_distributed" name="test_ulysses_tensor_permutation_reference[5]" time="0.397" /><testcase classname="tests.test_sequence_distributed" name="test_ulysses_tensor_permutation_reference[6]" time="0.677" /><testcase classname="tests.test_sequence_distributed" name="test_ulysses_tensor_permutation_reference[9]" time="1.967" /><testcase classname="tests.test_sequence_distributed" name="test_native_h3_sequence_tensor_reference[fp16-token-3]" time="0.090" /><testcase classname="tests.test_sequence_distributed" name="test_native_h3_sequence_tensor_reference[fp16-token-4]" time="0.186" /><testcase classname="tests.test_sequence_distributed" name="test_native_h3_sequence_tensor_reference[fp16-token-5]" time="0.259" /><testcase classname="tests.test_sequence_distributed" name="test_native_h3_sequence_tensor_reference[fp16-token-6]" time="0.304" /><testcase classname="tests.test_sequence_distributed" name="test_native_h3_sequence_tensor_reference[fp16-ulysses-3]" time="0.077" /><testcase classname="tests.test_sequence_distributed" name="test_native_h3_sequence_tensor_reference[fp16-ulysses-4]" time="0.160" /><testcase classname="tests.test_sequence_distributed" name="test_native_h3_sequence_tensor_reference[fp16-ulysses-5]" time="0.272" /><testcase classname="tests.test_sequence_distributed" name="test_native_h3_sequence_tensor_reference[fp16-ulysses-6]" time="0.536" /><testcase classname="tests.test_sequence_distributed" name="test_native_h3_sequence_tensor_reference[fp32-token-3]" time="0.085" /><testcase classname="tests.test_sequence_distributed" name="test_native_h3_sequence_tensor_reference[fp32-token-4]" time="0.172" /><testcase classname="tests.test_sequence_distributed" name="test_native_h3_sequence_tensor_reference[fp32-token-5]" time="0.254" /><testcase classname="tests.test_sequence_distributed" name="test_native_h3_sequence_tensor_reference[fp32-token-6]" time="0.311" /><testcase classname="tests.test_sequence_distributed" name="test_native_h3_sequence_tensor_reference[fp32-ulysses-3]" time="0.073" /><testcase classname="tests.test_sequence_distributed" name="test_native_h3_sequence_tensor_reference[fp32-ulysses-4]" time="0.151" /><testcase classname="tests.test_sequence_distributed" name="test_native_h3_sequence_tensor_reference[fp32-ulysses-5]" time="0.242" /><testcase classname="tests.test_sequence_distributed" name="test_native_h3_sequence_tensor_reference[fp32-ulysses-6]" time="0.247" /><testcase classname="tests.test_spectrum" name="test_linear_forecast_and_hash_framing" time="0.001" /><testcase classname="tests.test_spectrum" name="test_gates_skip_child_call_keep_targets_and_bound_history" time="0.001" /><testcase classname="tests.test_spectrum" name="test_insufficient_history_budget_is_actual" time="0.001" /><testcase classname="tests.test_spectrum" name="test_sampler_capability_and_few_steps" time="0.001" /><testcase classname="tests.test_spectrum" name="test_local_history_reconstructs_uneven_targets[1]" time="0.001" /><testcase classname="tests.test_spectrum" name="test_local_history_reconstructs_uneven_targets[2]" time="0.001" /><testcase classname="tests.test_spectrum" name="test_local_history_reconstructs_uneven_targets[3]" time="0.001" /><testcase classname="tests.test_spectrum" name="test_local_history_reconstructs_uneven_targets[4]" time="0.001" /><testcase classname="tests.test_spectrum" name="test_local_history_reconstructs_uneven_targets[6]" time="0.001" /><testcase classname="tests.test_spectrum" name="test_local_history_reconstructs_uneven_targets[9]" time="0.001" /><testcase classname="tests.test_spectrum" name="test_native_sampler_worker_spectrum" time="2.400" /><testcase classname="tests.test_workflow_migration" name="test_old_api_values_and_connections" time="0.001" /><testcase classname="tests.test_workflow_migration" name="test_old_ui_positional_values[14]" time="0.004" /><testcase classname="tests.test_workflow_migration" name="test_old_ui_positional_values[18]" time="0.003" /><testcase classname="tests.test_workflow_migration" name="test_reject_ambiguous_ui_layout" time="0.001" /><testcase classname="tests.test_workflow_migration" name="test_linked_legacy_boolean_policy_is_never_silently_dropped" time="0.001" /><testcase classname="tests.test_workflow_migration" name="test_all_shipped_workflows_are_current_and_acyclic" time="0.026" /></testsuite></testsuites>
+\ No newline at end of file
+--- /dev/null
++++ b/reports/performance-0.5.1/run-21417d004f5045d583892110ca288e10.json
+@@ -0,0 +1,70 @@
++{
++  "run_id": "21417d004f5045d583892110ca288e10",
++  "role": "h3",
++  "checkpoint": null,
++  "config": {
++    "gpu_ids": [
++      "all"
++    ],
++    "backend": "fsdp2_sequence",
++    "precision": "fp16",
++    "attention": "exact_chunked",
++    "reserve_gib": 0,
++    "query_chunk": 128,
++    "key_chunk": 512,
++    "dequant_rows": 256,
++    "release_after_sampling": true,
++    "cpu_offload": false,
++    "pin_memory": true,
++    "prefetch_blocks": 0,
++    "numa_policy": "none",
++    "attention_backend": null,
++    "allow_fallback": true,
++    "memory_policy": "auto",
++    "weight_placement": "gpu",
++    "sequence_mode": "token",
++    "sequence_comm_dtype": "fp16",
++    "allow_host_wrappers": false
++  },
++  "patch": {
++    "enabled": false,
++    "fp16_safe": true,
++    "debug_finite": false,
++    "mlp_chunk_tokens": 512,
++    "mlp_chunk_mode": "manual"
++  },
++  "role_options": {},
++  "sampler_bridge": {
++    "eligible": true,
++    "reason": "native_euler"
++  },
++  "steps": 2,
++  "sigmas": [
++    1.0,
++    0.9230769276618958,
++    0.0
++  ],
++  "manifest": {
++    "seed": 5,
++    "noise_sha256": "d8ee94a6e89d594526e80b073d85193772539f42518eee700fd06288c6c677f1",
++    "latent_shapes": [
++      [
++        1,
++        1,
++        1088
++      ]
++    ],
++    "sampler": "sample_euler",
++    "sampler_options": {},
++    "checkpoint_revision": "See worker checkpoint identity; remote revision UNKNOWN unless catalog match",
++    "lora": "UNSUPPORTED in supplied baseline; no descriptors silently applied",
++    "cfg": 1.0
++  },
++  "sampling_wall_s": 5.893900015507825e-05,
++  "status": "INTERRUPTED_OR_FAILED",
++  "session_fingerprint": null,
++  "history": [],
++  "note": "Sampling boundary only: text encoding/VAE/video encoding are separate phases; no raw prompt stored",
++  "execution_mode": "CPU_LOCAL_CONTRACT_NO_CUDA_NO_FSDP",
++  "performance_evidence": false
++}
+\ No newline at end of file
+--- /dev/null
++++ b/reports/performance-0.5.1/run-33be097328b249138d80fa1fa0ffa56c.json
+@@ -0,0 +1,70 @@
++{
++  "run_id": "33be097328b249138d80fa1fa0ffa56c",
++  "role": "h3",
++  "checkpoint": null,
++  "config": {
++    "gpu_ids": [
++      "all"
++    ],
++    "backend": "fsdp2_sequence",
++    "precision": "fp16",
++    "attention": "exact_chunked",
++    "reserve_gib": 0,
++    "query_chunk": 128,
++    "key_chunk": 512,
++    "dequant_rows": 256,
++    "release_after_sampling": true,
++    "cpu_offload": false,
++    "pin_memory": true,
++    "prefetch_blocks": 0,
++    "numa_policy": "none",
++    "attention_backend": null,
++    "allow_fallback": true,
++    "memory_policy": "auto",
++    "weight_placement": "gpu",
++    "sequence_mode": "token",
++    "sequence_comm_dtype": "fp16",
++    "allow_host_wrappers": false
++  },
++  "patch": {
++    "enabled": false,
++    "fp16_safe": true,
++    "debug_finite": false,
++    "mlp_chunk_tokens": 512,
++    "mlp_chunk_mode": "manual"
++  },
++  "role_options": {},
++  "sampler_bridge": {
++    "eligible": true,
++    "reason": "native_euler"
++  },
++  "steps": 2,
++  "sigmas": [
++    1.0,
++    0.9230769276618958,
++    0.0
++  ],
++  "manifest": {
++    "seed": 6,
++    "noise_sha256": "71334d3707a622361b273e4ee13a1fdf0997fed08f3990fca346c01b04953b2c",
++    "latent_shapes": [
++      [
++        1,
++        1,
++        1088
++      ]
++    ],
++    "sampler": "sample_euler",
++    "sampler_options": {},
++    "checkpoint_revision": "See worker checkpoint identity; remote revision UNKNOWN unless catalog match",
++    "lora": "UNSUPPORTED in supplied baseline; no descriptors silently applied",
++    "cfg": 1.0
++  },
++  "sampling_wall_s": 0.01420579199839267,
++  "status": "COMPLETE",
++  "session_fingerprint": null,
++  "history": [],
++  "note": "Sampling boundary only: text encoding/VAE/video encoding are separate phases; no raw prompt stored",
++  "execution_mode": "CPU_LOCAL_CONTRACT_NO_CUDA_NO_FSDP",
++  "performance_evidence": false
++}
+\ No newline at end of file
+--- /dev/null
++++ b/reports/performance-0.5.1/run-89a17f7fd4ef4933a13b92fe2b3eb3e2.json
+@@ -0,0 +1,70 @@
++{
++  "run_id": "89a17f7fd4ef4933a13b92fe2b3eb3e2",
++  "role": "h3",
++  "checkpoint": null,
++  "config": {
++    "gpu_ids": [
++      "all"
++    ],
++    "backend": "fsdp2_sequence",
++    "precision": "fp16",
++    "attention": "exact_chunked",
++    "reserve_gib": 0,
++    "query_chunk": 128,
++    "key_chunk": 512,
++    "dequant_rows": 256,
++    "release_after_sampling": true,
++    "cpu_offload": false,
++    "pin_memory": true,
++    "prefetch_blocks": 0,
++    "numa_policy": "none",
++    "attention_backend": null,
++    "allow_fallback": true,
++    "memory_policy": "auto",
++    "weight_placement": "gpu",
++    "sequence_mode": "token",
++    "sequence_comm_dtype": "fp16",
++    "allow_host_wrappers": false
++  },
++  "patch": {
++    "enabled": false,
++    "fp16_safe": true,
++    "debug_finite": false,
++    "mlp_chunk_tokens": 512,
++    "mlp_chunk_mode": "manual"
++  },
++  "role_options": {},
++  "sampler_bridge": {
++    "eligible": true,
++    "reason": "native_euler"
++  },
++  "steps": 2,
++  "sigmas": [
++    1.0,
++    0.9230769276618958,
++    0.0
++  ],
++  "manifest": {
++    "seed": 5,
++    "noise_sha256": "d8ee94a6e89d594526e80b073d85193772539f42518eee700fd06288c6c677f1",
++    "latent_shapes": [
++      [
++        1,
++        1,
++        1088
++      ]
++    ],
++    "sampler": "sample_euler",
++    "sampler_options": {},
++    "checkpoint_revision": "See worker checkpoint identity; remote revision UNKNOWN unless catalog match",
++    "lora": "UNSUPPORTED in supplied baseline; no descriptors silently applied",
++    "cfg": 1.0
++  },
++  "sampling_wall_s": 0.02018866700018407,
++  "status": "COMPLETE",
++  "session_fingerprint": null,
++  "history": [],
++  "note": "Sampling boundary only: text encoding/VAE/video encoding are separate phases; no raw prompt stored",
++  "execution_mode": "CPU_LOCAL_CONTRACT_NO_CUDA_NO_FSDP",
++  "performance_evidence": false
++}
+\ No newline at end of file
+--- /dev/null
++++ b/reports/performance-0.5.1/run-b1484bba41d541899233d05962695fbe.json
+@@ -0,0 +1,70 @@
++{
++  "run_id": "b1484bba41d541899233d05962695fbe",
++  "role": "h3",
++  "checkpoint": null,
++  "config": {
++    "gpu_ids": [
++      "all"
++    ],
++    "backend": "fsdp2_sequence",
++    "precision": "fp16",
++    "attention": "exact_chunked",
++    "reserve_gib": 0,
++    "query_chunk": 128,
++    "key_chunk": 512,
++    "dequant_rows": 256,
++    "release_after_sampling": true,
++    "cpu_offload": false,
++    "pin_memory": true,
++    "prefetch_blocks": 0,
++    "numa_policy": "none",
++    "attention_backend": null,
++    "allow_fallback": true,
++    "memory_policy": "auto",
++    "weight_placement": "gpu",
++    "sequence_mode": "token",
++    "sequence_comm_dtype": "fp16",
++    "allow_host_wrappers": false
++  },
++  "patch": {
++    "enabled": false,
++    "fp16_safe": true,
++    "debug_finite": false,
++    "mlp_chunk_tokens": 512,
++    "mlp_chunk_mode": "manual"
++  },
++  "role_options": {},
++  "sampler_bridge": {
++    "eligible": true,
++    "reason": "native_euler"
++  },
++  "steps": 2,
++  "sigmas": [
++    1.0,
++    0.9230769276618958,
++    0.0
++  ],
++  "manifest": {
++    "seed": 5,
++    "noise_sha256": "d8ee94a6e89d594526e80b073d85193772539f42518eee700fd06288c6c677f1",
++    "latent_shapes": [
++      [
++        1,
++        1,
++        1088
++      ]
++    ],
++    "sampler": "sample_euler",
++    "sampler_options": {},
++    "checkpoint_revision": "See worker checkpoint identity; remote revision UNKNOWN unless catalog match",
++    "lora": "UNSUPPORTED in supplied baseline; no descriptors silently applied",
++    "cfg": 1.0
++  },
++  "sampling_wall_s": 0.015397782000945881,
++  "status": "COMPLETE",
++  "session_fingerprint": null,
++  "history": [],
++  "note": "Sampling boundary only: text encoding/VAE/video encoding are separate phases; no raw prompt stored",
++  "execution_mode": "CPU_LOCAL_CONTRACT_NO_CUDA_NO_FSDP",
++  "performance_evidence": false
++}
+\ No newline at end of file
+--- /dev/null
++++ b/reports/performance-0.5.1/uploaded-log-analysis.json
+@@ -0,0 +1,1115 @@
++{
++  "uploaded_archive_sha256": "6c8e1e0622bf901bac1efa506b50d30d8c9cd626ab95ca3b3141bd273ff995db",
++  "note": "Uploaded measurements, unchanged inputs. Cancelled RPC timing is UNKNOWN; next-step budget is arithmetic replay, not GPU benchmark.",
++  "sessions": [
++    {
++      "session": "powershard-40lc4jmz",
++      "source_sha256": "9df8ec662e795b4672787cb5262b10caf002ead86467fe22416c9c0f37f1fb02",
++      "role": "h3",
++      "worker_pids": [
++        21134,
++        21139,
++        21144,
++        21149
++      ],
++      "gpu_ids": [
++        "0",
++        "1",
++        "2",
++        "3"
++      ],
++      "placement": "cpu",
++      "cpu_offload": true,
++      "sequence_mode": "ulysses",
++      "comm_dtype": "fp16",
++      "patch": {
++        "enabled": true,
++        "fp16_safe": true,
++        "debug_finite": false,
++        "mlp_chunk_tokens": 16384,
++        "mlp_chunk_mode": "off"
++      },
++      "requested_attention": "flash_attn",
++      "selected_attention": "sdpa",
++      "load_s": 85.18497098900002,
++      "local_shard_bytes": 10078230016,
++      "shard_devices": [
++        "cpu"
++      ],
++      "import_failures": {
++        "flash_attn": "ModuleNotFoundError: No module named 'flash_attn_2_cuda'",
++        "sdpa": null
++      },
++      "rpc": [
++        {
++          "sequence": 1,
++          "command": "preprocess_text",
++          "forward_s": 5.540150826000172,
++          "ipc_and_forward_s": 5.972872829999915,
++          "memory": {
++            "device": "cuda:0",
++            "allocated": 257654784,
++            "reserved": 526385152,
++            "peak_allocated": 4593339392,
++            "peak_reserved": 6463422464,
++            "free": 15325331456,
++            "total": 16911433728
++          },
++          "weight_memory": {
++            "persistent_shard_bytes": 10078230016,
++            "cpu_shard_bytes": 10078230016,
++            "gpu_shard_bytes": 0,
++            "replicated_buffer_bytes": 32864,
++            "largest_unsharded_group_bytes": 774209024,
++            "prefetch_blocks": 0,
++            "active_plus_prefetch_parameter_bound_bytes": 774219776,
++            "bound_excludes": "copy/communication buffers, temporary FP32 casts and dequant; inspect CUDA peak/trace",
++            "activation_workspace_bytes": "NOT_SEPARATELY_ATTRIBUTED; included in CUDA allocated/peak"
++          },
++          "plan": {
++            "policy": "auto",
++            "free_at_boundary": 15597961216,
++            "reserve_bytes": 0,
++            "activation_estimate_bytes": 1147087872,
++            "communication_estimate_bytes": 0,
++            "active_group_estimate_bytes": 774209024,
++            "requested_prefetch": 0,
++            "effective_prefetch": 0,
++            "mlp_budget_bytes": 13676664320,
++            "unknown": "allocator fragmentation, kernel workspace, external allocations; no OOM admission gate",
++            "estimated_global_tokens": 5927,
++            "estimated_local_tokens": 5927
++          },
++          "first_mlp": {
++            "mode": "off",
++            "requested_tokens": 16384,
++            "effective_tokens": 5927,
++            "local_tokens": 5927,
++            "chunks": 1,
++            "workspace_bytes_per_token": 293904,
++            "estimated_chunk_workspace_bytes": 1741969008,
++            "budget_bytes": 13676664320,
++            "prepared_weight_bytes": 0,
++            "reason": "off: полный локальный MLP; FP16 Safe сохранён",
++            "estimate_not_measurement": true,
++            "preparation_peak_estimate": 0,
++            "preparation": "per-call tiles; preparation budget insufficient or one chunk"
++          },
++          "actual_calls": {
++            "token_refiner:sdpa": 2
++          },
++          "semantic_fallbacks": {},
++          "global_tokens": null,
++          "sequence_communication": null
++        },
++        {
++          "sequence": 1,
++          "command": "preprocess_text",
++          "forward_s": 5.685762401999909,
++          "ipc_and_forward_s": 6.1072628980000445,
++          "memory": {
++            "device": "cuda:0",
++            "allocated": 257654784,
++            "reserved": 526385152,
++            "peak_allocated": 4593339392,
++            "peak_reserved": 6463422464,
++            "free": 15203696640,
++            "total": 16911433728
++          },
++          "weight_memory": {
++            "persistent_shard_bytes": 10078230016,
++            "cpu_shard_bytes": 10078230016,
++            "gpu_shard_bytes": 0,
++            "replicated_buffer_bytes": 32864,
++            "largest_unsharded_group_bytes": 774209024,
++            "prefetch_blocks": 0,
++            "active_plus_prefetch_parameter_bound_bytes": 774219776,
++            "bound_excludes": "copy/communication buffers, temporary FP32 casts and dequant; inspect CUDA peak/trace",
++            "activation_workspace_bytes": "NOT_SEPARATELY_ATTRIBUTED; included in CUDA allocated/peak"
++          },
++          "plan": {
++            "policy": "auto",
++            "free_at_boundary": 15476326400,
++            "reserve_bytes": 0,
++            "activation_estimate_bytes": 1147087872,
++            "communication_estimate_bytes": 0,
++            "active_group_estimate_bytes": 774209024,
++            "requested_prefetch": 0,
++            "effective_prefetch": 0,
++            "mlp_budget_bytes": 13555029504,
++            "unknown": "allocator fragmentation, kernel workspace, external allocations; no OOM admission gate",
++            "estimated_global_tokens": 5927,
++            "estimated_local_tokens": 5927
++          },
++          "first_mlp": {
++            "mode": "off",
++            "requested_tokens": 16384,
++            "effective_tokens": 5927,
++            "local_tokens": 5927,
++            "chunks": 1,
++            "workspace_bytes_per_token": 293904,
++            "estimated_chunk_workspace_bytes": 1741969008,
++            "budget_bytes": 13555029504,
++            "prepared_weight_bytes": 0,
++            "reason": "off: полный локальный MLP; FP16 Safe сохранён",
++            "estimate_not_measurement": true,
++            "preparation_peak_estimate": 0,
++            "preparation": "per-call tiles; preparation budget insufficient or one chunk"
++          },
++          "actual_calls": {
++            "token_refiner:sdpa": 2
++          },
++          "semantic_fallbacks": {},
++          "global_tokens": null,
++          "sequence_communication": null
++        }
++      ]
++    },
++    {
++      "session": "powershard-89zaurbs",
++      "source_sha256": "018f7b95578e14b8d5be5e841805278619c53d52b29c2093bb909e15d9b4ba7a",
++      "role": "h3",
++      "worker_pids": [
++        19381,
++        19383,
++        19385,
++        19387,
++        19389
++      ],
++      "gpu_ids": [
++        "0",
++        "1",
++        "2",
++        "3",
++        "5"
++      ],
++      "placement": "cpu",
++      "cpu_offload": true,
++      "sequence_mode": "token",
++      "comm_dtype": "fp32",
++      "patch": {
++        "enabled": true,
++        "fp16_safe": true,
++        "debug_finite": true,
++        "mlp_chunk_tokens": 4096,
++        "mlp_chunk_mode": "auto"
++      },
++      "requested_attention": "sdpa",
++      "selected_attention": "sdpa",
++      "load_s": 14.154966037000122,
++      "local_shard_bytes": 8064860144,
++      "shard_devices": [
++        "cpu"
++      ],
++      "import_failures": {
++        "sdpa": null
++      },
++      "rpc": [
++        {
++          "sequence": 1,
++          "command": "preprocess_text",
++          "forward_s": 7.069713997000008,
++          "ipc_and_forward_s": 7.568589026999916,
++          "memory": {
++            "device": "cuda:0",
++            "allocated": 257655296,
++            "reserved": 6444548096,
++            "peak_allocated": 4628819456,
++            "peak_reserved": 6444548096,
++            "free": 9014476800,
++            "total": 16911433728
++          },
++          "weight_memory": {
++            "persistent_shard_bytes": 8064860144,
++            "cpu_shard_bytes": 8064860144,
++            "gpu_shard_bytes": 0,
++            "managed_shard_bytes": 0,
++            "placement": "cpu",
++            "ats": null,
++            "replicated_buffer_bytes": 32864,
++            "largest_unsharded_group_bytes": 774209024,
++            "prefetch_blocks": 0,
++            "active_plus_prefetch_parameter_bound_bytes": 774219776,
++            "bound_excludes": "copy/communication buffers, temporary FP32 casts and dequant; inspect CUDA peak/trace",
++            "activation_workspace_bytes": "NOT_SEPARATELY_ATTRIBUTED; included in CUDA allocated/peak"
++          },
++          "plan": {
++            "policy": "auto",
++            "free_at_boundary": 15205269504,
++            "reserve_bytes": 0,
++            "activation_estimate_bytes": 1147087872,
++            "communication_estimate_bytes": 0,
++            "active_group_estimate_bytes": 774209024,
++            "requested_prefetch": 0,
++            "effective_prefetch": 0,
++            "mlp_budget_bytes": 13283972608,
++            "unknown": "allocator fragmentation, kernel workspace, external allocations; no OOM admission gate",
++            "estimated_global_tokens": 5927,
++            "estimated_local_tokens": 5927
++          },
++          "first_mlp": {
++            "mode": "auto",
++            "requested_tokens": 4096,
++            "effective_tokens": 5888,
++            "local_tokens": 5927,
++            "chunks": 2,
++            "workspace_bytes_per_token": 293904,
++            "estimated_chunk_workspace_bytes": 1730506752,
++            "budget_bytes": 13156518400,
++            "prepared_weight_bytes": 462422016,
++            "reason": "auto: локальные tokens, FP32 workspace, reserve, активные веса/prefetch",
++            "estimate_not_measurement": true,
++            "full_output_bytes": 127454208,
++            "preparation_peak_estimate": 2928672768,
++            "preparation": "active MLP, reused across token chunks"
++          },
++          "actual_calls": {
++            "token_refiner:sdpa": 2
++          },
++          "semantic_fallbacks": {},
++          "global_tokens": null,
++          "sequence_communication": null
++        },
++        {
++          "sequence": 2,
++          "command": "forward",
++          "forward_s": 45.17009905099985,
++          "ipc_and_forward_s": 45.3251401,
++          "memory": {
++            "device": "cuda:0",
++            "allocated": 294539776,
++            "reserved": 10869538816,
++            "peak_allocated": 9656077824,
++            "peak_reserved": 10869538816,
++            "free": 4336058368,
++            "total": 16911433728
++          },
++          "weight_memory": {
++            "persistent_shard_bytes": 8064860144,
++            "cpu_shard_bytes": 8064860144,
++            "gpu_shard_bytes": 0,
++            "managed_shard_bytes": 0,
++            "placement": "cpu",
++            "ats": null,
++            "replicated_buffer_bytes": 32864,
++            "largest_unsharded_group_bytes": 774209024,
++            "prefetch_blocks": 0,
++            "active_plus_prefetch_parameter_bound_bytes": 774219776,
++            "bound_excludes": "copy/communication buffers, temporary FP32 casts and dequant; inspect CUDA peak/trace",
++            "activation_workspace_bytes": "NOT_SEPARATELY_ATTRIBUTED; included in CUDA allocated/peak"
++          },
++          "plan": {
++            "policy": "auto",
++            "free_at_boundary": 8760459264,
++            "reserve_bytes": 0,
++            "activation_estimate_bytes": 2258307072,
++            "communication_estimate_bytes": 3441328128,
++            "active_group_estimate_bytes": 774209024,
++            "requested_prefetch": 0,
++            "effective_prefetch": 0,
++            "mlp_budget_bytes": 2286615040,
++            "unknown": "allocator fragmentation, kernel workspace, external allocations; no OOM admission gate",
++            "conditioning_tokens": "UNKNOWN reference/keyframe expansion; token estimate is a lower bound",
++            "estimated_global_tokens": 25004,
++            "estimated_local_tokens": 5001
++          },
++          "first_mlp": {
++            "mode": "auto",
++            "requested_tokens": 4096,
++            "effective_tokens": 6912,
++            "local_tokens": 9307,
++            "chunks": 2,
++            "workspace_bytes_per_token": 293904,
++            "estimated_chunk_workspace_bytes": 2031464448,
++            "budget_bytes": 2086477312,
++            "prepared_weight_bytes": 0,
++            "reason": "auto: локальные tokens, FP32 workspace, reserve, активные веса/prefetch",
++            "estimate_not_measurement": true,
++            "full_output_bytes": 200137728,
++            "preparation_peak_estimate": 0,
++            "preparation": "per-call tiles; preparation budget insufficient or one chunk"
++          },
++          "actual_calls": {
++            "token_refiner:sdpa": 2,
++            "dit:sdpa": 50
++          },
++          "semantic_fallbacks": {},
++          "global_tokens": 46535,
++          "sequence_communication": {
++            "kv_all_gathers": 50,
++            "qkv_all_to_all": 0,
++            "gathered_bytes": 133425152000,
++            "final_hidden_all_gathers": 1,
++            "mode": "token",
++            "output_all_to_all": 0,
++            "note": "Logical tensor bytes, not measured NCCL link traffic; Ulysses: fused QKV + output all-to-all"
++          },
++          "next_step_arithmetic_replay": {
++            "not_a_measured_cancelled_rpc": true,
++            "old_plan_budget_bytes": 0,
++            "reusable_cache_bytes": 10574999040,
++            "old_mlp_workspace_after_full_output": 0,
++            "old_mlp_effective_tokens": 1,
++            "new_boundary_budget_bytes": 8437213184
++          },
++          "all_rank_cpu_shards_bytes": 40312920064
++        }
++      ]
++    },
++    {
++      "session": "powershard-9liuhinq",
++      "source_sha256": "c212d13340ba247efbe31bfb288d860c554d174de36406e617f3f73ea19bde5e",
++      "role": "qwen",
++      "worker_pids": [
++        8961,
++        8963,
++        8965,
++        8967,
++        8969
++      ],
++      "gpu_ids": [
++        "0",
++        "1",
++        "2",
++        "3",
++        "5"
++      ],
++      "placement": "gpu",
++      "cpu_offload": false,
++      "sequence_mode": "token",
++      "comm_dtype": "fp32",
++      "patch": {
++        "enabled": false,
++        "fp16_safe": true,
++        "debug_finite": false,
++        "mlp_chunk_tokens": 512,
++        "mlp_chunk_mode": "manual"
++      },
++      "requested_attention": "auto",
++      "selected_attention": "vllm_flash_attn",
++      "load_s": 63.48006466200002,
++      "local_shard_bytes": 5310794432,
++      "shard_devices": [
++        "cuda:0"
++      ],
++      "import_failures": {
++        "vllm_flash_attn": null
++      },
++      "rpc": [
++        {
++          "sequence": 1,
++          "command": "encode",
++          "forward_s": 34.096861289,
++          "ipc_and_forward_s": 34.24335415300004,
++          "memory": {
++            "device": "cuda:0",
++            "allocated": 5420002304,
++            "reserved": 9950986240,
++            "peak_allocated": 8791548928,
++            "peak_reserved": 9950986240,
++            "free": 6009913344,
++            "total": 16911433728
++          },
++          "weight_memory": null,
++          "plan": {
++            "policy": "auto",
++            "free_at_boundary": 10441064448,
++            "reserve_bytes": 2147483648,
++            "activation_estimate_bytes": 102604800,
++            "communication_estimate_bytes": 34201600,
++            "active_group_estimate_bytes": 1555824640,
++            "requested_prefetch": 0,
++            "effective_prefetch": 0,
++            "mlp_budget_bytes": 6540132352,
++            "unknown": "allocator fragmentation, kernel workspace, external allocations; no OOM admission gate",
++            "vision_expansion_estimate": "UNKNOWN before native processor; estimate is a lower bound"
++          },
++          "first_mlp": {
++            "mode": "auto",
++            "requested_tokens": 4096,
++            "effective_tokens": 1024,
++            "local_tokens": 1186,
++            "chunks": 2,
++            "workspace_bytes_per_token": 471056,
++            "estimated_chunk_workspace_bytes": 482361344,
++            "budget_bytes": 6515843072,
++            "prepared_weight_bytes": 786432000,
++            "reason": "auto: локальные tokens, FP32 workspace, reserve, активные веса/prefetch",
++            "estimate_not_measurement": true,
++            "full_output_bytes": 24289280,
++            "preparation_peak_estimate": 891289600,
++            "preparation": "active MLP, reused across token chunks"
++          },
++          "actual_calls": {
++            "qwen_vision:sdpa": 270,
++            "qwen_text:sdpa": 50
++          },
++          "semantic_fallbacks": {
++            "dtype/head_dim вне области CUDA probe этой session": "sdpa",
++            "Flash API не принимает произвольный mask": "sdpa"
++          },
++          "global_tokens": null,
++          "sequence_communication": {
++            "kv_all_gathers": 50,
++            "hidden_all_gathers": 50
++          }
++        }
++      ]
++    },
++    {
++      "session": "powershard-fkbxjovb",
++      "source_sha256": "35256926444c59e37265a9467d355e70cfdd45a89d5a120b9e994820b3d3b8b6",
++      "role": "h3",
++      "worker_pids": [
++        11357,
++        11359,
++        11361,
++        11363,
++        11365
++      ],
++      "gpu_ids": [
++        "0",
++        "1",
++        "2",
++        "3",
++        "5"
++      ],
++      "placement": "cpu",
++      "cpu_offload": true,
++      "sequence_mode": "ulysses",
++      "comm_dtype": "fp32",
++      "patch": {
++        "enabled": true,
++        "fp16_safe": true,
++        "debug_finite": true,
++        "mlp_chunk_tokens": 4096,
++        "mlp_chunk_mode": "auto"
++      },
++      "requested_attention": "auto",
++      "selected_attention": "vllm_flash_attn",
++      "load_s": 82.17183059499996,
++      "local_shard_bytes": 8064860144,
++      "shard_devices": [
++        "cpu"
++      ],
++      "import_failures": {
++        "vllm_flash_attn": null
++      },
++      "rpc": [
++        {
++          "sequence": 1,
++          "command": "preprocess_text",
++          "forward_s": 6.9713832789999515,
++          "ipc_and_forward_s": 7.485994461000018,
++          "memory": {
++            "device": "cuda:0",
++            "allocated": 257655296,
++            "reserved": 6444548096,
++            "peak_allocated": 4628819456,
++            "peak_reserved": 6444548096,
++            "free": 9413459968,
++            "total": 16911433728
++          },
++          "weight_memory": {
++            "persistent_shard_bytes": 8064860144,
++            "cpu_shard_bytes": 8064860144,
++            "gpu_shard_bytes": 0,
++            "managed_shard_bytes": 0,
++            "placement": "cpu",
++            "ats": null,
++            "replicated_buffer_bytes": 32864,
++            "largest_unsharded_group_bytes": 774209024,
++            "prefetch_blocks": 0,
++            "active_plus_prefetch_parameter_bound_bytes": 774219776,
++            "bound_excludes": "copy/communication buffers, temporary FP32 casts and dequant; inspect CUDA peak/trace",
++            "activation_workspace_bytes": "NOT_SEPARATELY_ATTRIBUTED; included in CUDA allocated/peak"
++          },
++          "plan": {
++            "policy": "auto",
++            "free_at_boundary": 15604252672,
++            "reserve_bytes": 0,
++            "activation_estimate_bytes": 1147087872,
++            "communication_estimate_bytes": 0,
++            "active_group_estimate_bytes": 774209024,
++            "requested_prefetch": 0,
++            "effective_prefetch": 0,
++            "mlp_budget_bytes": 13682955776,
++            "unknown": "allocator fragmentation, kernel workspace, external allocations; no OOM admission gate",
++            "estimated_global_tokens": 5927,
++            "estimated_local_tokens": 5927
++          },
++          "first_mlp": {
++            "mode": "auto",
++            "requested_tokens": 4096,
++            "effective_tokens": 5888,
++            "local_tokens": 5927,
++            "chunks": 2,
++            "workspace_bytes_per_token": 293904,
++            "estimated_chunk_workspace_bytes": 1730506752,
++            "budget_bytes": 13555501568,
++            "prepared_weight_bytes": 462422016,
++            "reason": "auto: локальные tokens, FP32 workspace, reserve, активные веса/prefetch",
++            "estimate_not_measurement": true,
++            "full_output_bytes": 127454208,
++            "preparation_peak_estimate": 2928672768,
++            "preparation": "active MLP, reused across token chunks"
++          },
++          "actual_calls": {
++            "token_refiner:vllm_flash_attn": 2
++          },
++          "semantic_fallbacks": {},
++          "global_tokens": null,
++          "sequence_communication": null
++        },
++        {
++          "sequence": 2,
++          "command": "forward",
++          "forward_s": 51.98918929700005,
++          "ipc_and_forward_s": 52.12266526500002,
++          "memory": {
++            "device": "cuda:0",
++            "allocated": 294539776,
++            "reserved": 10536091648,
++            "peak_allocated": 8950830080,
++            "peak_reserved": 10536091648,
++            "free": 5019795456,
++            "total": 16911433728
++          },
++          "weight_memory": {
++            "persistent_shard_bytes": 8064860144,
++            "cpu_shard_bytes": 8064860144,
++            "gpu_shard_bytes": 0,
++            "managed_shard_bytes": 0,
++            "placement": "cpu",
++            "ats": null,
++            "replicated_buffer_bytes": 32864,
++            "largest_unsharded_group_bytes": 774209024,
++            "prefetch_blocks": 0,
++            "active_plus_prefetch_parameter_bound_bytes": 774219776,
++            "bound_excludes": "copy/communication buffers, temporary FP32 casts and dequant; inspect CUDA peak/trace",
++            "activation_workspace_bytes": "NOT_SEPARATELY_ATTRIBUTED; included in CUDA allocated/peak"
++          },
++          "plan": {
++            "policy": "auto",
++            "free_at_boundary": 9159442432,
++            "reserve_bytes": 0,
++            "activation_estimate_bytes": 2258307072,
++            "communication_estimate_bytes": 1843568640,
++            "active_group_estimate_bytes": 774209024,
++            "requested_prefetch": 0,
++            "effective_prefetch": 0,
++            "mlp_budget_bytes": 4283357696,
++            "unknown": "allocator fragmentation, kernel workspace, external allocations; no OOM admission gate",
++            "conditioning_tokens": "UNKNOWN reference/keyframe expansion; token estimate is a lower bound",
++            "estimated_global_tokens": 25004,
++            "estimated_local_tokens": 5001
++          },
++          "first_mlp": {
++            "mode": "auto",
++            "requested_tokens": 4096,
++            "effective_tokens": 9216,
++            "local_tokens": 9307,
++            "chunks": 2,
++            "workspace_bytes_per_token": 293904,
++            "estimated_chunk_workspace_bytes": 2708619264,
++            "budget_bytes": 4083219968,
++            "prepared_weight_bytes": 0,
++            "reason": "auto: локальные tokens, FP32 workspace, reserve, активные веса/prefetch",
++            "estimate_not_measurement": true,
++            "full_output_bytes": 200137728,
++            "preparation_peak_estimate": 0,
++            "preparation": "per-call tiles; preparation budget insufficient or one chunk"
++          },
++          "actual_calls": {
++            "token_refiner:vllm_flash_attn": 2,
++            "dit:vllm_flash_attn": 50
++          },
++          "semantic_fallbacks": {},
++          "global_tokens": 46535,
++          "sequence_communication": {
++            "kv_all_gathers": 0,
++            "qkv_all_to_all": 50,
++            "gathered_bytes": 42886656000,
++            "final_hidden_all_gathers": 1,
++            "mode": "ulysses",
++            "output_all_to_all": 50,
++            "note": "Logical tensor bytes, not measured NCCL link traffic; Ulysses: fused QKV + output all-to-all"
++          },
++          "next_step_arithmetic_replay": {
++            "not_a_measured_cancelled_rpc": true,
++            "old_plan_budget_bytes": 143710720,
++            "reusable_cache_bytes": 10241551872,
++            "old_mlp_workspace_after_full_output": 0,
++            "old_mlp_effective_tokens": 1,
++            "new_boundary_budget_bytes": 10385262592
++          },
++          "all_rank_cpu_shards_bytes": 40312920064
++        }
++      ]
++    },
++    {
++      "session": "powershard-hvjcdv7x",
++      "source_sha256": "0396cdb7ca3c4555fc3b465eb5a69277767d9dfde2e8306de85dec2ee2714c86",
++      "role": "h3",
++      "worker_pids": [
++        14444,
++        14446,
++        14448,
++        14450,
++        14452
++      ],
++      "gpu_ids": [
++        "0",
++        "1",
++        "2",
++        "3",
++        "5"
++      ],
++      "placement": "cpu",
++      "cpu_offload": true,
++      "sequence_mode": "token",
++      "comm_dtype": "fp32",
++      "patch": {
++        "enabled": true,
++        "fp16_safe": true,
++        "debug_finite": true,
++        "mlp_chunk_tokens": 4096,
++        "mlp_chunk_mode": "auto"
++      },
++      "requested_attention": "flash_attn",
++      "selected_attention": "sdpa",
++      "load_s": 12.875495813000043,
++      "local_shard_bytes": 8064860144,
++      "shard_devices": [
++        "cpu"
++      ],
++      "import_failures": {
++        "flash_attn": "ModuleNotFoundError: No module named 'flash_attn_2_cuda'",
++        "sdpa": null
++      },
++      "rpc": [
++        {
++          "sequence": 1,
++          "command": "preprocess_text",
++          "forward_s": 7.002810352000097,
++          "ipc_and_forward_s": 7.502926175999846,
++          "memory": {
++            "device": "cuda:0",
++            "allocated": 257655296,
++            "reserved": 6444548096,
++            "peak_allocated": 4628819456,
++            "peak_reserved": 6444548096,
++            "free": 9287630848,
++            "total": 16911433728
++          },
++          "weight_memory": {
++            "persistent_shard_bytes": 8064860144,
++            "cpu_shard_bytes": 8064860144,
++            "gpu_shard_bytes": 0,
++            "managed_shard_bytes": 0,
++            "placement": "cpu",
++            "ats": null,
++            "replicated_buffer_bytes": 32864,
++            "largest_unsharded_group_bytes": 774209024,
++            "prefetch_blocks": 0,
++            "active_plus_prefetch_parameter_bound_bytes": 774219776,
++            "bound_excludes": "copy/communication buffers, temporary FP32 casts and dequant; inspect CUDA peak/trace",
++            "activation_workspace_bytes": "NOT_SEPARATELY_ATTRIBUTED; included in CUDA allocated/peak"
++          },
++          "plan": {
++            "policy": "auto",
++            "free_at_boundary": 15478423552,
++            "reserve_bytes": 0,
++            "activation_estimate_bytes": 1147087872,
++            "communication_estimate_bytes": 0,
++            "active_group_estimate_bytes": 774209024,
++            "requested_prefetch": 0,
++            "effective_prefetch": 0,
++            "mlp_budget_bytes": 13557126656,
++            "unknown": "allocator fragmentation, kernel workspace, external allocations; no OOM admission gate",
++            "estimated_global_tokens": 5927,
++            "estimated_local_tokens": 5927
++          },
++          "first_mlp": {
++            "mode": "auto",
++            "requested_tokens": 4096,
++            "effective_tokens": 5888,
++            "local_tokens": 5927,
++            "chunks": 2,
++            "workspace_bytes_per_token": 293904,
++            "estimated_chunk_workspace_bytes": 1730506752,
++            "budget_bytes": 13429672448,
++            "prepared_weight_bytes": 462422016,
++            "reason": "auto: локальные tokens, FP32 workspace, reserve, активные веса/prefetch",
++            "estimate_not_measurement": true,
++            "full_output_bytes": 127454208,
++            "preparation_peak_estimate": 2928672768,
++            "preparation": "active MLP, reused across token chunks"
++          },
++          "actual_calls": {
++            "token_refiner:sdpa": 2
++          },
++          "semantic_fallbacks": {},
++          "global_tokens": null,
++          "sequence_communication": null
++        },
++        {
++          "sequence": 2,
++          "command": "forward",
++          "forward_s": 45.348289901000044,
++          "ipc_and_forward_s": 45.519988769000065,
++          "memory": {
++            "device": "cuda:0",
++            "allocated": 294539776,
++            "reserved": 10869538816,
++            "peak_allocated": 9656077824,
++            "peak_reserved": 10869538816,
++            "free": 4588240896,
++            "total": 16911433728
++          },
++          "weight_memory": {
++            "persistent_shard_bytes": 8064860144,
++            "cpu_shard_bytes": 8064860144,
++            "gpu_shard_bytes": 0,
++            "managed_shard_bytes": 0,
++            "placement": "cpu",
++            "ats": null,
++            "replicated_buffer_bytes": 32864,
++            "largest_unsharded_group_bytes": 774209024,
++            "prefetch_blocks": 0,
++            "active_plus_prefetch_parameter_bound_bytes": 774219776,
++            "bound_excludes": "copy/communication buffers, temporary FP32 casts and dequant; inspect CUDA peak/trace",
++            "activation_workspace_bytes": "NOT_SEPARATELY_ATTRIBUTED; included in CUDA allocated/peak"
++          },
++          "plan": {
++            "policy": "auto",
++            "free_at_boundary": 9011462144,
++            "reserve_bytes": 0,
++            "activation_estimate_bytes": 2258307072,
++            "communication_estimate_bytes": 3441328128,
++            "active_group_estimate_bytes": 774209024,
++            "requested_prefetch": 0,
++            "effective_prefetch": 0,
++            "mlp_budget_bytes": 2537617920,
++            "unknown": "allocator fragmentation, kernel workspace, external allocations; no OOM admission gate",
++            "conditioning_tokens": "UNKNOWN reference/keyframe expansion; token estimate is a lower bound",
++            "estimated_global_tokens": 25004,
++            "estimated_local_tokens": 5001
++          },
++          "first_mlp": {
++            "mode": "auto",
++            "requested_tokens": 4096,
++            "effective_tokens": 7936,
++            "local_tokens": 9307,
++            "chunks": 2,
++            "workspace_bytes_per_token": 293904,
++            "estimated_chunk_workspace_bytes": 2332422144,
++            "budget_bytes": 2337480192,
++            "prepared_weight_bytes": 0,
++            "reason": "auto: локальные tokens, FP32 workspace, reserve, активные веса/prefetch",
++            "estimate_not_measurement": true,
++            "full_output_bytes": 200137728,
++            "preparation_peak_estimate": 0,
++            "preparation": "per-call tiles; preparation budget insufficient or one chunk"
++          },
++          "actual_calls": {
++            "token_refiner:sdpa": 2,
++            "dit:sdpa": 50
++          },
++          "semantic_fallbacks": {},
++          "global_tokens": 46535,
++          "sequence_communication": {
++            "kv_all_gathers": 50,
++            "qkv_all_to_all": 0,
++            "gathered_bytes": 133425152000,
++            "final_hidden_all_gathers": 1,
++            "mode": "token",
++            "output_all_to_all": 0,
++            "note": "Logical tensor bytes, not measured NCCL link traffic; Ulysses: fused QKV + output all-to-all"
++          },
++          "next_step_arithmetic_replay": {
++            "not_a_measured_cancelled_rpc": true,
++            "old_plan_budget_bytes": 0,
++            "reusable_cache_bytes": 10574999040,
++            "old_mlp_workspace_after_full_output": 0,
++            "old_mlp_effective_tokens": 1,
++            "new_boundary_budget_bytes": 8689395712
++          },
++          "all_rank_cpu_shards_bytes": 40312920064
++        }
++      ]
++    },
++    {
++      "session": "powershard-wqop66l2",
++      "source_sha256": "27fa2be1dff7856356784c5595b0a1248e1b45210f75f21a7ae4da8b16121f29",
++      "role": "qwen",
++      "worker_pids": [
++        11121,
++        11123,
++        11125,
++        11127,
++        11129
++      ],
++      "gpu_ids": [
++        "0",
++        "1",
++        "2",
++        "3",
++        "5"
++      ],
++      "placement": "ats",
++      "cpu_offload": true,
++      "sequence_mode": "ulysses",
++      "comm_dtype": "fp16",
++      "patch": {
++        "enabled": false,
++        "fp16_safe": true,
++        "debug_finite": false,
++        "mlp_chunk_tokens": 512,
++        "mlp_chunk_mode": "manual"
++      },
++      "requested_attention": "vllm_flash_attn",
++      "selected_attention": "vllm_flash_attn",
++      "load_s": 56.15643535799995,
++      "local_shard_bytes": 5310794432,
++      "shard_devices": [
++        "cpu"
++      ],
++      "import_failures": {
++        "vllm_flash_attn": null
++      },
++      "rpc": []
++    },
++    {
++      "session": "powershard-x7pplm61",
++      "source_sha256": "b3ff5c4ef7eff42ef26266c098a999ead9b37ad5e48fdc962cd5f518d253075d",
++      "role": "qwen",
++      "worker_pids": [
++        14809,
++        14811,
++        14813,
++        14815,
++        14817
++      ],
++      "gpu_ids": [
++        "0",
++        "1",
++        "2",
++        "3",
++        "5"
++      ],
++      "placement": "ats",
++      "cpu_offload": true,
++      "sequence_mode": "ulysses",
++      "comm_dtype": "fp16",
++      "patch": {
++        "enabled": false,
++        "fp16_safe": true,
++        "debug_finite": false,
++        "mlp_chunk_tokens": 512,
++        "mlp_chunk_mode": "manual"
++      },
++      "requested_attention": "flash_attn",
++      "selected_attention": "sdpa",
++      "load_s": 4.932875101000036,
++      "local_shard_bytes": 5310794432,
++      "shard_devices": [
++        "cpu"
++      ],
++      "import_failures": {
++        "flash_attn": "ModuleNotFoundError: No module named 'flash_attn_2_cuda'",
++        "sdpa": null
++      },
++      "rpc": []
++    },
++    {
++      "session": "powershard-zvqa3svd",
++      "source_sha256": "37f6b3fb941fd5149d688eb54244e78a0d1fa1459575bf940c362664000a3f7e",
++      "role": "h3",
++      "worker_pids": [
++        17661,
++        17663,
++        17665,
++        17668
++      ],
++      "gpu_ids": [
++        "0",
++        "1",
++        "2",
++        "3"
++      ],
++      "placement": "cpu",
++      "cpu_offload": true,
++      "sequence_mode": "token",
++      "comm_dtype": "fp32",
++      "patch": {
++        "enabled": true,
++        "fp16_safe": true,
++        "debug_finite": true,
++        "mlp_chunk_tokens": 4096,
++        "mlp_chunk_mode": "auto"
++      },
++      "requested_attention": "vllm_flash_attn",
++      "selected_attention": "vllm_flash_attn",
++      "load_s": 19.246954021999954,
++      "local_shard_bytes": 10078230016,
++      "shard_devices": [
++        "cpu"
++      ],
++      "import_failures": {
++        "vllm_flash_attn": null
++      },
++      "rpc": [
++        {
++          "sequence": 1,
++          "command": "preprocess_text",
++          "forward_s": 5.741467298000089,
++          "ipc_and_forward_s": 6.184105542999987,
++          "memory": {
++            "device": "cuda:0",
++            "allocated": 257655296,
++            "reserved": 6465519616,
++            "peak_allocated": 4628387328,
++            "peak_reserved": 6465519616,
++            "free": 9145024512,
++            "total": 16911433728
++          },
++          "weight_memory": {
++            "persistent_shard_bytes": 10078230016,
++            "cpu_shard_bytes": 10078230016,
++            "gpu_shard_bytes": 0,
++            "managed_shard_bytes": 0,
++            "placement": "cpu",
++            "ats": null,
++            "replicated_buffer_bytes": 32864,
++            "largest_unsharded_group_bytes": 774209024,
++            "prefetch_blocks": 0,
++            "active_plus_prefetch_parameter_bound_bytes": 774219776,
++            "bound_excludes": "copy/communication buffers, temporary FP32 casts and dequant; inspect CUDA peak/trace",
++            "activation_workspace_bytes": "NOT_SEPARATELY_ATTRIBUTED; included in CUDA allocated/peak"
++          },
++          "plan": {
++            "policy": "auto",
++            "free_at_boundary": 15356788736,
++            "reserve_bytes": 0,
++            "activation_estimate_bytes": 1147087872,
++            "communication_estimate_bytes": 0,
++            "active_group_estimate_bytes": 774209024,
++            "requested_prefetch": 0,
++            "effective_prefetch": 0,
++            "mlp_budget_bytes": 13435491840,
++            "unknown": "allocator fragmentation, kernel workspace, external allocations; no OOM admission gate",
++            "estimated_global_tokens": 5927,
++            "estimated_local_tokens": 5927
++          },
++          "first_mlp": {
++            "mode": "auto",
++            "requested_tokens": 4096,
++            "effective_tokens": 5888,
++            "local_tokens": 5927,
++            "chunks": 2,
++            "workspace_bytes_per_token": 293904,
++            "estimated_chunk_workspace_bytes": 1730506752,
++            "budget_bytes": 13308037632,
++            "prepared_weight_bytes": 462422016,
++            "reason": "auto: локальные tokens, FP32 workspace, reserve, активные веса/prefetch",
++            "estimate_not_measurement": true,
++            "full_output_bytes": 127454208,
++            "preparation_peak_estimate": 2928672768,
++            "preparation": "active MLP, reused across token chunks"
++          },
++          "actual_calls": {
++            "token_refiner:vllm_flash_attn": 2
++          },
++          "semantic_fallbacks": {},
++          "global_tokens": null,
++          "sequence_communication": null
++        },
++        {
++          "sequence": 2,
++          "command": "forward",
++          "forward_s": 61.56016009299992,
++          "ipc_and_forward_s": 61.71306136299995,
++          "memory": {
++            "device": "cuda:0",
++            "allocated": 294539776,
++            "reserved": 11750342656,
++            "peak_allocated": 9955983360,
++            "peak_reserved": 11750342656,
++            "free": 3585671168,
++            "total": 16911433728
++          },
++          "weight_memory": {
++            "persistent_shard_bytes": 10078230016,
++            "cpu_shard_bytes": 10078230016,
++            "gpu_shard_bytes": 0,
++            "managed_shard_bytes": 0,
++            "placement": "cpu",
++            "ats": null,
++            "replicated_buffer_bytes": 32864,
++            "largest_unsharded_group_bytes": 774209024,
++            "prefetch_blocks": 0,
++            "active_plus_prefetch_parameter_bound_bytes": 774219776,
++            "bound_excludes": "copy/communication buffers, temporary FP32 casts and dequant; inspect CUDA peak/trace",
++            "activation_workspace_bytes": "NOT_SEPARATELY_ATTRIBUTED; included in CUDA allocated/peak"
++          },
++          "plan": {
++            "policy": "auto",
++            "free_at_boundary": 8870232064,
++            "reserve_bytes": 0,
++            "activation_estimate_bytes": 2419587072,
++            "communication_estimate_bytes": 3584573440,
++            "active_group_estimate_bytes": 774209024,
++            "requested_prefetch": 0,
++            "effective_prefetch": 0,
++            "mlp_budget_bytes": 2091862528,
++            "unknown": "allocator fragmentation, kernel workspace, external allocations; no OOM admission gate",
++            "conditioning_tokens": "UNKNOWN reference/keyframe expansion; token estimate is a lower bound",
++            "estimated_global_tokens": 25004,
++            "estimated_local_tokens": 6251
++          },
++          "first_mlp": {
++            "mode": "auto",
++            "requested_tokens": 4096,
++            "effective_tokens": 6144,
++            "local_tokens": 11634,
++            "chunks": 2,
++            "workspace_bytes_per_token": 293904,
++            "estimated_chunk_workspace_bytes": 1805746176,
++            "budget_bytes": 1841684992,
++            "prepared_weight_bytes": 0,
++            "reason": "auto: локальные tokens, FP32 workspace, reserve, активные веса/prefetch",
++            "estimate_not_measurement": true,
++            "full_output_bytes": 250177536,
++            "preparation_peak_estimate": 0,
++            "preparation": "per-call tiles; preparation budget insufficient or one chunk"
++          },
++          "actual_calls": {
++            "token_refiner:vllm_flash_attn": 2,
++            "dit:vllm_flash_attn": 50
++          },
++          "semantic_fallbacks": {},
++          "global_tokens": 46535,
++          "sequence_communication": {
++            "kv_all_gathers": 50,
++            "qkv_all_to_all": 0,
++            "gathered_bytes": 133425152000,
++            "final_hidden_all_gathers": 1,
++            "mode": "token",
++            "output_all_to_all": 0,
++            "note": "Logical tensor bytes, not measured NCCL link traffic; Ulysses: fused QKV + output all-to-all"
++          },
++          "next_step_arithmetic_replay": {
++            "not_a_measured_cancelled_rpc": true,
++            "old_plan_budget_bytes": 0,
++            "reusable_cache_bytes": 11455802880,
++            "old_mlp_workspace_after_full_output": 0,
++            "old_mlp_effective_tokens": 1,
++            "new_boundary_budget_bytes": 8263104512
++          },
++          "all_rank_cpu_shards_bytes": 40312920064
++        }
++      ]
++    }
++  ]
++}
+\ No newline at end of file
+--- /dev/null
++++ b/reports/performance-0.5.1/verification.json
+@@ -0,0 +1,157 @@
++{
++  "version": "0.5.1",
++  "date": "2026-10-04",
++  "environment": {
++    "powershard": "0.5.1",
++    "commit": "60b94a99b7908d3d81d83641c67a5f3c24a7a8c4",
++    "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
++    "architecture": "x86_64",
++    "source_sha256": "63999b3cee8abcfd3e207db2da6416efb65935e148175cb66def38d0e9ceb0de",
++    "torch": "2.12.0+cpu",
++    "torch_cuda": null
++  },
++  "comfy_sha": "f1072eb0350638a3390ddb6afbcaa8c6b237c6fd",
++  "pytest": {
++    "total": 255,
++    "passed": 239,
++    "skipped": 16,
++    "failures": [],
++    "skip_details": [
++      {
++        "test": "test_real_ulysses_collectives[3]",
++        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
++      },
++      {
++        "test": "test_real_ulysses_collectives[4]",
++        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
++      },
++      {
++        "test": "test_real_ulysses_collectives[5]",
++        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
++      },
++      {
++        "test": "test_real_ulysses_collectives[6]",
++        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
++      },
++      {
++        "test": "test_native_h3_sequence[token-math-3]",
++        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
++      },
++      {
++        "test": "test_native_h3_sequence[token-math-4]",
++        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
++      },
++      {
++        "test": "test_native_h3_sequence[token-math-5]",
++        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
++      },
++      {
++        "test": "test_native_h3_sequence[token-math-6]",
++        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
++      },
++      {
++        "test": "test_native_h3_sequence[ulysses-math-3]",
++        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
++      },
++      {
++        "test": "test_native_h3_sequence[ulysses-math-4]",
++        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
++      },
++      {
++        "test": "test_native_h3_sequence[ulysses-math-5]",
++        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
++      },
++      {
++        "test": "test_native_h3_sequence[ulysses-math-6]",
++        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
++      },
++      {
++        "test": "test_native_h3_sequence[ulysses-sdpa-3]",
++        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
++      },
++      {
++        "test": "test_native_h3_sequence[ulysses-sdpa-4]",
++        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
++      },
++      {
++        "test": "test_native_h3_sequence[ulysses-sdpa-5]",
++        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
++      },
++      {
++        "test": "test_native_h3_sequence[ulysses-sdpa-6]",
++        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
++      }
++    ]
++  },
++  "checks": {
++    "ruff_F821_F823": "PASS",
++    "compileall": "PASS",
++    "javascript_syntax": "PASS",
++    "git_diff_whitespace": "PASS",
++    "native_comfy_sampler_cpu": {
++      "status": "PASS",
++      "device": "CPU x86_64",
++      "sampler": "native ComfyUI Euler/simple CFG=1",
++      "steps": 2,
++      "seeds": [
++        5,
++        6,
++        5
++      ],
++      "audio_video": "PASS",
++      "clone_model_options": "PASS",
++      "seed_change_repeat": "PASS",
++      "reject_patch_before_RPC": "PASS",
++      "transport": "TEST_LOCAL_CONTRACT_ONLY",
++      "distributed_CUDA": "NOT_RUN",
++      "real_checkpoint": "NOT_RUN"
++    }
++  },
++  "hardware": {
++    "CUDA": "NOT_RUN: no CUDA device",
++    "NCCL": "NOT_RUN: no CUDA device",
++    "POWER9": "NOT_RUN: runtime x86_64",
++    "real_H3_checkpoint": "NOT_RUN: weights are on user server",
++    "ATS": "NOT_RUN: no target hardware",
++    "performance_after_fix": "NOT_MEASURED_ON_AC922",
++    "actual_FA_Triton_kernels_after_fix": "NOT_RUN: server probe provided"
++  },
++  "evidence": {
++    "uploaded_logs": "uploaded-log-analysis.json",
++    "attention_probe_cpu_expected": {
++      "status": "NOT_RUN",
++      "reason": "CUDA unavailable",
++      "accelerators": {
++        "environment": {
++          "powershard": "0.5.1",
++          "commit": "60b94a99b7908d3d81d83641c67a5f3c24a7a8c4",
++          "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
++          "architecture": "x86_64",
++          "source_sha256": "63999b3cee8abcfd3e207db2da6416efb65935e148175cb66def38d0e9ceb0de",
++          "torch": "2.12.0+cpu",
++          "torch_cuda": null
++        },
++        "packages": {
++          "flash-attn": "NOT_INSTALLED",
++          "vllm-flash-attn": "NOT_INSTALLED",
++          "triton": "NOT_INSTALLED",
++          "power-torch-cuda124": "NOT_INSTALLED",
++          "torch": "2.12.0+cpu"
++        },
++        "architecture": "x86_64",
++        "matmul": {
++          "allow_fp16_reduced_precision_reduction": true,
++          "allow_fp16_accumulation": false
++        },
++        "triton": {
++          "explicit_powershard_kernel_path": false,
++          "torch_compile": false,
++          "execution": "NOT_USED_BY_POWERSHARD",
++          "note": "Installed version does not prove execution. Custom attention providers may have their own kernels; inspect a CUDA trace."
++        }
++      }
++    },
++    "attention_probe_expected_exit_code": 2
++  },
++  "warning": "Emulated tensor collectives test layout/math only. They do not certify NCCL transport or GPU performance."
++}
+\ No newline at end of file
+--- a/scripts/accept_h3.py
++++ b/scripts/accept_h3.py
+@@ -10,8 +10,12 @@
+ p.add_argument('--prefetch-blocks',type=int,choices=[0,1,2]);p.add_argument('--numa-policy',choices=['none','auto','bind'])
+ p.add_argument('--mlp-mode',choices=['auto','manual','off'],default='auto');p.add_argument('--mlp-tokens',type=int,default=4096)
+ p.add_argument('--fp16-safe',action=argparse.BooleanOptionalAction,default=True);p.add_argument('--debug-finite',action='store_true');p.add_argument('--text-magnitude',type=float,default=1.)
++p.add_argument('--frames',type=int,default=2);p.add_argument('--latent-height',type=int,default=8);p.add_argument('--latent-width',type=int,default=8)
++p.add_argument('--audio-tokens',type=int,default=5);p.add_argument('--text-tokens',type=int,default=7)
++p.add_argument('--sequence-comm-dtype',choices=['fp16','fp32'])
+ p.add_argument('--attention-backend',choices=['auto','sdpa','flash_attn','vllm_flash_attn','sageattention','math']);p.add_argument('--allow-fallback',action=argparse.BooleanOptionalAction,default=None)
+ a=p.parse_args()
++if min(a.frames,a.latent_height,a.latent_width,a.audio_tokens,a.text_tokens)<1:p.error('input dimensions must be positive')
+ import torch
+ from powershard.config import DistributedConfig
+ from powershard.runtime import Session
+@@ -23,14 +27,16 @@
+ options['backend']='fsdp2_sequence'
+ options['precision']='int8_fp16' if ck.quantization() else 'fp16'
+ if a.precision is not None:options['precision']=a.precision
+-for key in ('weight_placement','sequence_mode','pin_memory','prefetch_blocks','numa_policy','attention_backend','allow_fallback'):
++for key in ('weight_placement','sequence_mode','sequence_comm_dtype','pin_memory','prefetch_blocks','numa_policy','attention_backend','allow_fallback'):
+  if getattr(a,key) is not None:options[key]=getattr(a,key)
+ options.update(release_after_sampling=False)
+ c=DistributedConfig(**options)
+ patch=H3PatchConfig(enabled=a.fp16_safe,debug_finite=a.debug_finite,mlp_chunk_mode=a.mlp_mode,mlp_chunk_tokens=a.mlp_tokens)
+ s=Session(str(ck.path),c,a.comfy,a.output,patch=patch)
+ g=torch.Generator().manual_seed(44)
+-video=torch.randn(1,cfg['latents_dim'],2,8,8,generator=g);audio=torch.randn(1,cfg['audio_latents_dim'],2,5,generator=g);text=torch.randn(1,7,cfg['text_dim'],generator=g)*a.text_magnitude
++video=torch.randn(1,cfg['latents_dim'],a.frames,a.latent_height,a.latent_width,generator=g)
++audio=torch.randn(1,cfg['audio_latents_dim'],2,a.audio_tokens,generator=g)
++text=torch.randn(1,a.text_tokens,cfg['text_dim'],generator=g)*a.text_magnitude
+ kwargs={'transformer_options':{'sample_sigmas':torch.tensor([1.,.7,.3,0.])},'minimax_payload':{'seed':44}}
+ from powershard.conditioning_cache import content_hash
+ input_sha256=content_hash(dict(video=video,audio=audio,text=text,timestep=torch.tensor([700.]),kwargs=kwargs))
+@@ -59,5 +65,6 @@
+  save_file({'video':outputs[0][0].contiguous(),'audio':outputs[0][1].contiguous()},str(Path(a.output,'latents.safetensors')))
+  report={'status':'PASS','checkpoint':ck.identity(),'config':c.to_dict(),'patch':patch.to_dict(),'text_magnitude':a.text_magnitude,'input':'synthetic conditioning; not end-to-end generation',
+          'input_sha256':input_sha256,'seed':44,'repeated_forward':3,'lifecycle':bool(a.lifecycle),'rank_history':s.history}
++ report['input_shapes']={'video':list(video.shape),'audio':list(audio.shape),'text':list(text.shape)}
+  Path(a.output).mkdir(parents=True,exist_ok=True);Path(a.output,'acceptance.json').write_text(json.dumps(report,indent=2));print('PASS:',a.output)
+ finally:s.close()
+--- /dev/null
++++ b/scripts/probe_accelerators.py
+@@ -0,0 +1,52 @@
++#!/usr/bin/env python3
++"""Each provider runs in its own context; no package installs or stack changes."""
++import argparse
++import json
++import os
++from pathlib import Path
++import subprocess
++import sys
++
++sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
++
++
++def main():
++    parser=argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--gpus",default="0",help="CUDA-visible IDs/UUIDs; each tested in isolation")
++    parser.add_argument("--providers",default="flash_attn,vllm_flash_attn,sdpa,triton")
++    parser.add_argument("--mode",choices=["token","ulysses"],default="token")
++    parser.add_argument("--world",type=int,default=5)
++    parser.add_argument("--total",type=int,default=46535)
++    parser.add_argument("--heads",type=int,default=56)
++    parser.add_argument("--dim",type=int,default=128)
++    parser.add_argument("--repeats",type=int,default=3)
++    parser.add_argument("--output",default="accelerators.json")
++    args=parser.parse_args()
++    if min(args.world,args.total,args.heads,args.dim,args.repeats)<1:parser.error("sizes must be positive")
++    providers=args.providers.split(",")
++    if any(p not in ("flash_attn","vllm_flash_attn","sdpa","triton") for p in providers):parser.error("unknown provider")
++    from powershard.devices import resolve_gpu_selection
++    devices=resolve_gpu_selection(tuple(args.gpus.split(",")))
++    output=Path(args.output);output.parent.mkdir(parents=True,exist_ok=True)
++    reports=[]
++    for device in devices:
++        for provider in providers:
++            print(f"Testing {device['user_id']} {device['uuid']} {provider} {args.mode}",file=sys.stderr,flush=True)
++            env=os.environ.copy();env["CUDA_VISIBLE_DEVICES"]=device["uuid"]
++            env["PYTHONPATH"]=os.pathsep.join([str(Path(__file__).resolve().parents[1]),env.get("PYTHONPATH","")])
++            cmd=[sys.executable,"-m","powershard.accelerator_probe",provider,"--world",str(args.world),
++                 "--mode",args.mode,"--total",str(args.total),"--heads",str(args.heads),"--dim",str(args.dim),"--repeats",str(args.repeats)]
++            try:
++                run=subprocess.run(cmd,env=env,capture_output=True,text=True)
++            except KeyboardInterrupt:
++                output.write_text(json.dumps(dict(status="INTERRUPTED",results=reports),indent=2));raise
++            try:report=json.loads(run.stdout)
++            except ValueError:report=dict(status="FAIL",reason="subprocess did not return JSON",stdout=run.stdout[-2000:])
++            report.update(gpu=device,exit_code=run.returncode,stderr=run.stderr[-5000:])
++            reports.append(report)
++            output.write_text(json.dumps(dict(status="COMPLETE",results=reports),indent=2))
++            print(f"{provider}: {report['status']}; median {report.get('median_cuda_ms','—')} ms",file=sys.stderr,flush=True)
++    return 0 if all(r["status"]=="PASS" for r in reports) else 2
++
++
++if __name__=="__main__":raise SystemExit(main())
+--- a/scripts/probe_h3_cuda.py
++++ b/scripts/probe_h3_cuda.py
+@@ -66,8 +66,8 @@
+  from powershard.config import DistributedConfig
+  from powershard.source_guard import verify_comfy
+  torch.cuda.set_device(a.worker);device=torch.device('cuda',a.worker)
+- torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction=False
+- if hasattr(torch.backends.cuda.matmul,'allow_fp16_accumulation'):torch.backends.cuda.matmul.allow_fp16_accumulation=False
++ from powershard.fp16_safe import configure_matmul
++ configure_matmul(True)
+  dist.init_process_group('nccl',init_method=Path(a.folder,'store').as_uri(),rank=a.worker,world_size=world,
+                          timeout=timedelta(days=365),device_id=device)
+  try:
+@@ -79,6 +79,8 @@
+    from powershard.ats_memory import ManagedShardPool
+    managed_pool=ManagedShardPool(device)
+   report={'rank':a.worker,'locality':locality,'capabilities':caps,'torch':torch.__version__,'cuda':torch.version.cuda}
++  from powershard.telemetry import accelerator_inventory
++  report['accelerators']=accelerator_inventory()
+   report['collectives']=collectives(device)
+   report['tiny_linear_fsdp']=distributed_probe(device,config.cpu_offload,a.pin_memory,a.prefetch_blocks,expected_world=world,managed_pool=managed_pool)
+   report['native_h3_fsdp']=native_h3_probe(device,config,a.folder,managed_pool=managed_pool)
+--- a/sources.lock.json
++++ b/sources.lock.json
+@@ -110,5 +110,14 @@
+     "ComfyUI_sha": "f1072eb0350638a3390ddb6afbcaa8c6b237c6fd",
+     "torch": "2.12.0+cpu",
+     "hardware": "x86_64 CPU; CUDA/POWER9 NOT_RUN"
++  },
++  "revision_0_5_1_validation": {
++    "date": "2026-10-04",
++    "ComfyUI_sha": "f1072eb0350638a3390ddb6afbcaa8c6b237c6fd",
++    "torch": "2.12.0+cpu",
++    "hardware": "x86_64 CPU; CUDA/POWER9 NOT_RUN",
++    "source_sha256": "63999b3cee8abcfd3e207db2da6416efb65935e148175cb66def38d0e9ceb0de",
++    "tests_passed": 239,
++    "tests_not_run": 16
+   }
+ }
+--- a/tests/test_fp16_safe.py
++++ b/tests/test_fp16_safe.py
+@@ -30,6 +30,31 @@
+     error = (got-expected).square().mean().sqrt()/expected.square().mean().sqrt()
+     assert error < .001
+     torch.testing.assert_close(got,expected,atol=magnitude*.012,rtol=.003)
++
++
++@pytest.mark.parametrize("weight_magnitude",[0.1,20000.])
++def test_checkpoint_bounds_keep_large_outputs_finite_without_weight_reductions(weight_magnitude,monkeypatch):
++    from powershard.operations import checkpoint_row_bounds,matmul_constants
++    from powershard.fp16_safe import prepare_matmul
++    g=torch.Generator().manual_seed(333)
++    weight=(torch.rand(23,64,generator=g)*weight_magnitude).half()
++    shards=weight.tensor_split(5,dim=0)
++    bounds=[checkpoint_row_bounds(p,tile_rows=2) for p in shards]
++    constants=matmul_constants(max(b[0] for b in bounds),max(b[1] for b in bounds),64)
++    x=torch.randn(9,64,generator=g)*1e6
++    expected=torch.nn.functional.linear(x,weight.float())
++    # A forward must not read/reduce the whole weight into FP32 again.
++    original_float=torch.Tensor.float
++    def checked_float(t):
++        if t.untyped_storage().data_ptr()==weight.untyped_storage().data_ptr():
++            raise AssertionError("full weight float cast in forward")
++        return original_float(t)
++    monkeypatch.setattr(torch.Tensor,"float",checked_float)
++    got=safe_linear(x,weight,constants=constants)
++    assert got.dtype==torch.float32 and torch.isfinite(got).all()
++    assert ((got-expected).square().mean()/expected.square().mean()).sqrt()<.002
++    if constants[0]==1.:
++        assert prepare_matmul(weight.T,constants)[0].data_ptr()==weight.data_ptr()
+ 
+ 
+ def test_attention_matmuls_large_values():
+--- a/tests/test_mlp_policy.py
++++ b/tests/test_mlp_policy.py
+@@ -72,7 +72,39 @@
+ def test_memory_estimate_never_rejects_manual():
+     assert mlp_plan(20000,5376,14336,"off",512,0)["effective_tokens"]==20000
+     assert mlp_plan(20000,5376,14336,"manual",16384,0)["effective_tokens"]==16384
+-    assert mlp_plan(20000,5376,14336,"auto",512,0)["effective_tokens"]==1
++    exhausted=mlp_plan(20000,5376,14336,"auto",512,0)
++    assert exhausted["effective_tokens"]==256 and exhausted["estimate_exhausted"]
+     assert plan_forward(1,2,3,4,5,2,"auto")["effective_prefetch"]==0
+     assert H3PatchConfig(**{"mlp_chunk_tokens":8192}).mlp_chunk_mode=="manual"
+     with pytest.raises(ValueError):H3PatchConfig(mlp_chunk_tokens=0)
++
++
++def test_auto_does_not_create_a_tiny_tail_when_all_tokens_fit():
++    plan=mlp_plan(9307,5376,14336,"auto",4096,10*2**30)
++    assert plan["effective_tokens"]==9307 and plan["chunks"]==1
++
++
++@pytest.mark.parametrize("free,reserved,allocated",[
++    (3585671168,11750342656,294539776),
++    (4336058368,10869538816,294539776),
++    (5019795456,10536091648,294539776),
++])
++def test_next_step_reuses_cache_from_uploaded_runs(free,reserved,allocated):
++    # Actual end-of-forward samples from the AC922 logs. The old calculation
++    # made workspace zero on the next step while ~10 GiB was reusable.
++    args=(free,0,2419587072,3584573440,774209024,0,"auto")
++    assert plan_forward(*args)["mlp_budget_bytes"]==0
++    corrected=plan_forward(*args,reusable_bytes=reserved-allocated)
++    mlp=mlp_plan(11634,5376,14336,"auto",4096,corrected["mlp_budget_bytes"]-250177536)
++    assert mlp["chunks"]==1 and not mlp["estimate_exhausted"]
++
++
++def test_pending_stream_blocks_are_not_credited(monkeypatch):
++    from powershard.memory_policy import available_memory
++    monkeypatch.setattr(torch.cuda,"mem_get_info",lambda device:(100,2000))
++    monkeypatch.setattr(torch.cuda,"memory_allocated",lambda device:300)
++    monkeypatch.setattr(torch.cuda,"memory_reserved",lambda device:1400)
++    monkeypatch.setattr(torch.cuda,"memory_stats",lambda device:{"active_bytes.all.current":800})
++    monkeypatch.setattr(torch.cuda.memory,"get_allocator_backend",lambda:"native")
++    snapshot=available_memory(torch.device("cuda:0"))
++    assert snapshot["reusable_cache_bytes"]==600 and snapshot["available_bytes"]==700
+--- /dev/null
++++ b/tests/test_progress.py
+@@ -0,0 +1,37 @@
++import json
++import io
++from types import SimpleNamespace
++import pytest
++from powershard.telemetry import RequestProgress,profiler_summary
++
++
++def test_cancelled_rpc_preserves_chosen_mlp_and_failure_status(tmp_path,monkeypatch):
++    from powershard.runtime import Session
++    from powershard.config import DistributedConfig
++    session=Session(None,DistributedConfig(),tmp_path,tmp_path/"reports")
++    session.path=tmp_path/"powershard-test";session.path.mkdir()
++    progress=RequestProgress(session.report_dir/"powershard-test-rank0-progress.json",rank=0)
++    progress.begin(1,"forward")
++    progress("mlp_plan",dict(effective_tokens=256,local_tokens=9307))
++    session.processes=[SimpleNamespace(stdin=io.StringIO())]
++    monkeypatch.setattr(session,"start",lambda cancel:None)
++    monkeypatch.setattr(session,"close",lambda **kwargs:None)
++    def interrupt(sequence,cancel):raise KeyboardInterrupt()
++    monkeypatch.setattr(session,"_wait",interrupt)
++    with pytest.raises(KeyboardInterrupt):session.call("forward",(),{})
++    event=session.history[-1]
++    assert event["status"]=="INTERRUPTED_OR_FAILED"
++    assert event["rank_progress"][0]["mlp_plan"]["effective_tokens"]==256
++    assert not list(session.report_dir.glob("*.tmp"))
++
++
++def test_profile_distinguishes_operator_selection_from_kernel_observation():
++    class Profile:
++        def events(self):return [SimpleNamespace(device_type="DeviceType.CUDA",name="volta_hgemm",device_time_total=13),
++                                SimpleNamespace(device_type="DeviceType.CUDA",name="flash_fwd",device_time_total=8),
++                                SimpleNamespace(device_type="DeviceType.CPU",name="aten::linear",device_time_total=0)]
++        def key_averages(self):return [SimpleNamespace(key="aten::_scaled_dot_product_efficient_attention",count=50)]
++    result=profiler_summary(Profile())
++    assert result["attention_operators"]=={"aten::_scaled_dot_product_efficient_attention":50}
++    assert result["attention_kernel_names"]==["flash_fwd"]
++    assert result["cuda_kernel_count"]==2 and result["triton_kernel_names"]==[]
+--- a/tests/test_revision_config.py
++++ b/tests/test_revision_config.py
+@@ -72,6 +72,22 @@
+     assert seen==['vllm_flash_attn'] and result['effective']=='vllm_flash_attn'
+ 
+ 
++def test_missing_flash_extension_checks_installed_vllm_fallback(monkeypatch):
++    import powershard.attention_policy as policy
++    seen=[]
++    def probe(provider,*args):
++        seen.append(provider)
++        return dict(status='FAIL',reason="No module named flash_attn_2_cuda") if provider=='flash_attn' else dict(status='PASS',identity={'module':'test'})
++    monkeypatch.setattr(policy,'isolated_probe',probe)
++    with pytest.warns(UserWarning,match='Effective: vllm_flash_attn'):
++        result=policy.prepare_policy(DistributedConfig(attention_backend='flash_attn'),[dict(uuid='GPU-0')])
++    assert seen==['flash_attn','vllm_flash_attn'] and result['effective']=='vllm_flash_attn'
++    seen.clear()
++    with pytest.raises(RuntimeError):
++        policy.prepare_policy(DistributedConfig(attention_backend='flash_attn',allow_fallback=False),[dict(uuid='GPU-0')])
++    assert seen==['flash_attn']
++
++
+ def test_ats_native_pool_is_worker_local_and_preserves_allocator_options():
+     from powershard.ats_memory import ats_worker_environment
+     original=dict(CUDA_VISIBLE_DEVICES='GPU-abc',PYTORCH_CUDA_ALLOC_CONF='backend:cudaMallocAsync,expandable_segments:True,roundup_power2_divisions:[256:1,512:2]')
+--- a/tests/test_sequence_distributed.py
++++ b/tests/test_sequence_distributed.py
+@@ -181,9 +181,10 @@
+         list(executor.map(worker,range(world)))
+ 
+ 
+-@pytest.mark.parametrize("world", [3,5,6])
++@pytest.mark.parametrize("world", [3,4,5,6])
+ @pytest.mark.parametrize("mode", ["token","ulysses"])
+-def test_native_h3_sequence_tensor_reference(world,mode,h3_factory,monkeypatch):
++@pytest.mark.parametrize("communication", ["fp16","fp32"])
++def test_native_h3_sequence_tensor_reference(world,mode,communication,h3_factory,monkeypatch):
+     """Native H3 with emulated collective transport; NOT a distributed test.
+ 
+     Check both intermediate high-V exchange and final >65504 FP32 residual.
+@@ -192,7 +193,7 @@
+     from concurrent.futures import ThreadPoolExecutor
+     import threading
+     torch.set_num_threads(1)
+-    config=DistributedConfig(sequence_mode=mode,sequence_comm_dtype="fp16",attention_backend="sdpa")
++    config=DistributedConfig(sequence_mode=mode,sequence_comm_dtype=communication,attention_backend="sdpa")
+     def create():
+         net=h3_factory();net.condition_proj.weight.fill_(1.)
+         install_attention(net,config)
+@@ -217,8 +218,12 @@
+         output.copy_(torch.stack([slots[r][local.rank] for r in range(world)]));barrier.wait()
+     def all_gather(output,input,group=None):
+         slots[local.rank]=input.clone();barrier.wait();output.copy_(torch.cat(slots));barrier.wait()
++    def all_reduce(value,op=None,group=None):
++        slots[local.rank]=value.clone();barrier.wait()
++        value.copy_(torch.stack(slots).amax(0));barrier.wait()
+     monkeypatch.setattr(dist,"all_to_all_single",all_to_all)
+     monkeypatch.setattr(dist,"all_gather_into_tensor",all_gather)
++    monkeypatch.setattr(dist,"all_reduce",all_reduce)
+     for net,_ in models:install_sequence(net,config)
+     def worker(rank):
+         local.rank=rank;net,tracker=models[rank]
+@@ -228,5 +233,7 @@
+                 for got,ref in zip(actual,expected):torch.testing.assert_close(got,ref,rtol=.01,atol=.03)
+                 state=net.blocks[0].attn._ps_sequence
+                 assert state['enabled'] and state['ulysses']==(mode=='ulysses')
++                assert state['effective_comm_dtype']=='torch.'+("float16" if communication=="fp16" else "float32")
++                assert state['scale_collectives']==(len(net.blocks) if communication=="fp16" else 0)
+         except BaseException:barrier.abort();raise
+     with ThreadPoolExecutor(max_workers=world) as executor:list(executor.map(worker,range(world)))
+--- a/web/powershard.js
++++ b/web/powershard.js
+@@ -26,7 +26,7 @@
+         const original = nodeType.prototype.onNodeCreated;
+         nodeType.prototype.onNodeCreated = function () {
+             original?.apply(this, arguments);
+-            this.addWidget("button", "Выбрать GPU / провайдеры attention", null, async () => {
++            this.addWidget("button", "GPU / attention / память", null, async () => {
+                 const widget = this.widgets.find(w => w.name === "gpu_ids");
+                 const dialog = document.createElement("dialog");
+                 dialog.style.cssText = "max-width:750px;background:#222;color:#eee;padding:20px;border:1px solid #888;";
+@@ -67,6 +67,28 @@
+                     const status = document.createElement("pre"); status.style.whiteSpace = "pre-wrap";
+                     status.textContent = data.providers.map(p => `${p.name}: ${p.status}\n${p.path ?? ""}\n${p.reason}${p.legacy_shim ? "\nWARNING: старый глобальный shim" : ""}`).join("\n\n");
+                     body.append(status);
++                    const execution = document.createElement("pre");
++                    execution.style.cssText = "white-space:pre-wrap;border-top:1px solid #888;padding-top:10px;";
++                    const refresh = document.createElement("button"); refresh.textContent = "Обновить фактические вызовы и память";
++                    const showStatus = async () => {
++                        try {
++                            const response = await api.fetchApi("/powershard/status");
++                            if (!response.ok) throw new Error(`HTTP ${response.status}`);
++                            const state = await response.json();
++                            const gib = n => ((n ?? 0) / 2**30).toFixed(2);
++                            execution.textContent = `${state.note}\n\n` + state.sessions.map(s => {
++                                const lines = [`${s.role}: ${s.running ? "workers активны" : "workers закрыты"}; GPUs ${s.gpu_ids.join(",")}; веса ${s.placement}`, `Requested: ${s.requested}; selected policy: ${s.selected ?? "ещё не проверено"}`];
++                                for (const r of s.ranks) {
++                                    lines.push(`rank ${r.rank}: CUDA tensors ${gib(r.memory?.allocated)} GiB; неактивный cache ${gib(r.memory?.inactive_cache_bytes)} GiB; CPU shards ${gib(r.weights?.cpu_shard_bytes)} GiB`, `  actual calls: ${JSON.stringify(r.attention ?? {})}; MLP chunk ${r.mlp_chunks.join(",")}`);
++                                }
++                                for (const p of s.progress ?? []) lines.push(`progress rank ${p.rank}: RPC ${p.sequence} ${p.command} ${p.status}; MLP chunk ${p.mlp_plan?.effective_tokens ?? "—"}`);
++                                return lines.join("\n");
++                            }).join("\n\n");
++                        } catch (error) { execution.textContent = `Статус: ${error.message}`; }
++                    };
++                    refresh.onclick = showStatus;
++                    body.append(refresh, execution);
++                    await showStatus();
+                 } catch (error) { body.textContent = `Диагностика: ${error.message}. gpu_ids можно указать вручную.`; }
+             }, { serialize: false });
+         };

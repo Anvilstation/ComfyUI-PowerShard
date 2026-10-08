@@ -4,34 +4,46 @@ import argparse,copy,json,subprocess,sys
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
 from powershard.reporting import redact
-p=argparse.ArgumentParser();p.add_argument('workflow');p.add_argument('--axis',choices=['backend','mlp','offload','attention','spectrum','memory'],required=True)
+p=argparse.ArgumentParser();p.add_argument('workflow');p.add_argument('--axis',choices=['sequence','mlp','placement','attention','spectrum','wire','prefetch'],required=True)
 p.add_argument('--output-dir',default='reports/local-matrix');p.add_argument('--repeats',type=int,default=2)
 p.add_argument('--submit',action='store_true');p.add_argument('--server',default='http://127.0.0.1:8188');a=p.parse_args()
 if a.repeats<1:p.error('repeats >= 1')
-base=json.loads(Path(a.workflow).read_text());out=Path(a.output_dir);out.mkdir(parents=True,exist_ok=True)
-values=dict(backend=['fsdp2','fsdp2_sequence'],mlp=[1024,4096,8192,16384,'off','auto'],
-    offload=[False,True],attention=['sdpa','vllm_flash_attn','flash_attn'],spectrum=[False,True],memory=['custom','ram_min'])[a.axis]
+from powershard.workflow_migration import migrate_api
+base,_=migrate_api(json.loads(Path(a.workflow).read_text()));out=Path(a.output_dir);out.mkdir(parents=True,exist_ok=True)
+values=dict(sequence=['token','ulysses'],mlp=[1024,4096,8192,16384,'off','auto'],
+    placement=['gpu','cpu','ats'],attention=['sdpa','vllm_flash_attn','flash_attn'],spectrum=[False,True],wire=['fp32','fp16'],prefetch=[0,1,2])[a.axis]
 loaders=[n for n in base.values() if n['class_type']=='PowerShardH3Loader']
 if len(loaders)!=1:p.error('Нужен один H3 loader для однозначного сравнения')
-config_id=loaders[0]['inputs']['config'][0]
-base_config=base[config_id]['inputs']
-if a.axis in ('offload','mlp') and base_config.get('memory_profile')=='ram_min':
- p.error('ram_min переопределяет offload/MLP: используйте --axis memory или исходный workflow с memory_profile=custom')
-if a.axis=='offload' and base_config.get('weight_placement') in ('cpu','ats'):
- p.error('weight_placement=cpu/ats принудительно включает offload: для сравнения on/off установите gpu в исходном workflow')
+config_id=str(loaders[0]['inputs']['config'][0])
+visited=set()
+while base[config_id]['class_type']=='PowerShardConfigTuning':
+ if config_id in visited:p.error('Cycle in ConfigTuning chain')
+ visited.add(config_id);config_id=str(base[config_id]['inputs']['config'][0])
+if base[config_id]['class_type']!='PowerShardConfig':p.error('Expected PowerShardConfig below the optional ConfigTuning chain')
 manifest={'axis':a.axis,'base_graph':redact(base),'cases':[],
     'note_ru':'Для принудительного full execution запускайте ComfyUI с --cache-none. Это может пересоздать loaders: cold/warm определять по worker load/history, не по номеру повтора. Warm RPC отдельно accept_h3/accept_qwen. Графы inputs сохраняются явно этим инструментом.'}
 for value in values:
  graph=copy.deepcopy(base);cfg=graph[config_id]['inputs']
- if a.axis=='backend':cfg['backend']=value
- elif a.axis=='offload':cfg['cpu_offload']=value
+ if a.axis=='sequence':cfg['sequence_mode']=value
+ elif a.axis=='placement':cfg['weight_placement']=value
  elif a.axis=='attention':cfg['attention_backend']=value
- elif a.axis=='memory':cfg['memory_profile']=value
+ elif a.axis in ('wire','prefetch'):
+  tuning_id=str(graph[next(k for k,n in graph.items() if n['class_type']=='PowerShardH3Loader')]['inputs']['config'][0])
+  if graph[tuning_id]['class_type']!='PowerShardConfigTuning':
+   key=str(max(int(k) for k in graph if k.isdigit())+1)
+   graph[key]=dict(class_type='PowerShardConfigTuning',inputs=dict(config=[tuning_id,0],reserve_gib=2.,prefetch_blocks=0,
+       numa_policy='auto',strict_attention=False,allow_host_wrappers=False,pin_memory=True,
+       sequence_comm_dtype='fp32',prefetch_policy='auto'))
+   next(n for n in graph.values() if n['class_type']=='PowerShardH3Loader')['inputs']['config']=[key,0]
+   tuning_id=key
+  if a.axis=='wire':graph[tuning_id]['inputs']['sequence_comm_dtype']=value
+  else:graph[tuning_id]['inputs'].update(prefetch_blocks=value,prefetch_policy='manual')
  elif a.axis=='mlp':
+  if not any(n['class_type']=='PowerShardH3MLP' for n in graph.values()):p.error('Для MLP matrix добавьте PowerShardH3MLP в MODEL chain')
   for n in graph.values():
-   if n['class_type']=='PowerShardH3FP16Patcher':
-    n['inputs']['mlp_chunk_mode']=value if isinstance(value,str) else 'manual'
-    if isinstance(value,int):n['inputs']['mlp_chunk_tokens']=value
+   if n['class_type']=='PowerShardH3MLP':
+    n['inputs']['mode']=value if isinstance(value,str) else 'manual'
+    if isinstance(value,int):n['inputs']['chunk_tokens']=value
  else:
   spectrum=[(k,n) for k,n in graph.items() if n['class_type']=='PowerShardSpectrum']
   if not spectrum:

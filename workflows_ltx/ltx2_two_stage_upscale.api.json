@@ -1,0 +1,396 @@
+{
+  "1": {
+    "class_type": "PowerShardConfig",
+    "inputs": {
+      "gpu_ids": "all",
+      "weight_placement": "gpu",
+      "precision": "fp16",
+      "attention_backend": "auto",
+      "sequence_mode": "ulysses"
+    }
+  },
+  "2": {
+    "class_type": "PowerShardConfigTuning",
+    "inputs": {
+      "config": [
+        "1",
+        0
+      ],
+      "reserve_gib": 1.5,
+      "prefetch_blocks": 0,
+      "numa_policy": "auto",
+      "strict_attention": false,
+      "allow_host_wrappers": false,
+      "pin_memory": true,
+      "sequence_comm_dtype": "fp32",
+      "prefetch_policy": "auto"
+    }
+  },
+  "3": {
+    "class_type": "PowerShardLTXOptions",
+    "inputs": {
+      "fp16_safe": false,
+      "debug_finite": false,
+      "mlp_chunk_mode": "auto",
+      "mlp_chunk_tokens": 4096,
+      "batch_chunk": 0,
+      "attention_chunk": 8192
+    }
+  },
+  "4": {
+    "class_type": "PowerShardLTXLoader",
+    "inputs": {
+      "checkpoint": "checkpoints/ltx-2.3-22b-dev.safetensors",
+      "config": [
+        "2",
+        0
+      ],
+      "keep_in_memory": true,
+      "options": [
+        "3",
+        0
+      ]
+    }
+  },
+  "5": {
+    "class_type": "PowerShardLTXTextEncoder",
+    "inputs": {
+      "text_encoder": "gemma_3_12B_it.safetensors",
+      "ckpt_name": "checkpoints/ltx-2.3-22b-dev.safetensors",
+      "config": [
+        "2",
+        0
+      ],
+      "after_encode": "release"
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "5",
+        0
+      ],
+      "text": "A lighthouse keeper climbs the spiral stairs at dusk, his lantern swinging; waves crash on the rocks outside and the wind howls through the window. He says quietly: \"Another storm tonight.\""
+    }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "5",
+        0
+      ],
+      "text": "blurry, low quality, still frame, frames, watermark, overlay, titles, has blurbox, has subtitles, distorted, deformed, disfigured, bad anatomy, static, jitter"
+    }
+  },
+  "8": {
+    "class_type": "LTXVConditioning",
+    "inputs": {
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "frame_rate": 24.0
+    }
+  },
+  "9": {
+    "class_type": "PowerShardLTXVAELoader",
+    "inputs": {
+      "ckpt_name": "checkpoints/ltx-2.3-22b-dev.safetensors"
+    }
+  },
+  "10": {
+    "class_type": "EmptyLTXVLatentVideo",
+    "inputs": {
+      "width": 640,
+      "height": 384,
+      "length": 121,
+      "batch_size": 1
+    }
+  },
+  "11": {
+    "class_type": "LTXVEmptyLatentAudio",
+    "inputs": {
+      "frames_number": 121,
+      "frame_rate": 24.0,
+      "batch_size": 1,
+      "audio_vae": [
+        "9",
+        1
+      ]
+    }
+  },
+  "30": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler"
+    }
+  },
+  "31": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": 42
+    }
+  },
+  "42": {
+    "class_type": "LTXVSpatioTemporalGuidance",
+    "inputs": {
+      "model": [
+        "4",
+        0
+      ],
+      "scale": 1.0,
+      "blocks": "29",
+      "start_percent": 0.0,
+      "end_percent": 1.0
+    }
+  },
+  "43": {
+    "class_type": "LTXVModalityGuidance",
+    "inputs": {
+      "model": [
+        "42",
+        0
+      ],
+      "modality_scale": 3.0,
+      "start_percent": 0.0,
+      "end_percent": 1.0
+    }
+  },
+  "20": {
+    "class_type": "LTXVConcatAVLatent",
+    "inputs": {
+      "video_latent": [
+        "10",
+        0
+      ],
+      "audio_latent": [
+        "11",
+        0
+      ]
+    }
+  },
+  "201": {
+    "class_type": "LTXVScheduler",
+    "inputs": {
+      "steps": 20,
+      "max_shift": 2.05,
+      "base_shift": 0.95,
+      "stretch": true,
+      "terminal": 0.1,
+      "latent": [
+        "20",
+        0
+      ]
+    }
+  },
+  "202": {
+    "class_type": "LTXVDualCFGGuider",
+    "inputs": {
+      "model": [
+        "43",
+        0
+      ],
+      "positive": [
+        "8",
+        0
+      ],
+      "negative": [
+        "8",
+        1
+      ],
+      "video_cfg": 3.0,
+      "audio_cfg": 7.0
+    }
+  },
+  "203": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": [
+        "31",
+        0
+      ],
+      "guider": [
+        "202",
+        0
+      ],
+      "sampler": [
+        "30",
+        0
+      ],
+      "sigmas": [
+        "201",
+        0
+      ],
+      "latent_image": [
+        "20",
+        0
+      ]
+    }
+  },
+  "70": {
+    "class_type": "LTXVSeparateAVLatent",
+    "inputs": {
+      "av_latent": [
+        "203",
+        0
+      ]
+    }
+  },
+  "71": {
+    "class_type": "LatentUpscaleModelLoader",
+    "inputs": {
+      "model_name": "ltx-2.3-spatial-upscaler-x2.safetensors"
+    }
+  },
+  "72": {
+    "class_type": "LTXVLatentUpsampler",
+    "inputs": {
+      "samples": [
+        "70",
+        0
+      ],
+      "upscale_model": [
+        "71",
+        0
+      ],
+      "vae": [
+        "9",
+        0
+      ]
+    }
+  },
+  "80": {
+    "class_type": "LTXVConcatAVLatent",
+    "inputs": {
+      "video_latent": [
+        "72",
+        0
+      ],
+      "audio_latent": [
+        "70",
+        1
+      ]
+    }
+  },
+  "801": {
+    "class_type": "ManualSigmas",
+    "inputs": {
+      "sigmas": "0.909375, 0.725, 0.421875, 0.0"
+    }
+  },
+  "802": {
+    "class_type": "LTXVDualCFGGuider",
+    "inputs": {
+      "model": [
+        "43",
+        0
+      ],
+      "positive": [
+        "8",
+        0
+      ],
+      "negative": [
+        "8",
+        1
+      ],
+      "video_cfg": 1.0,
+      "audio_cfg": 1.0
+    }
+  },
+  "803": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": [
+        "31",
+        0
+      ],
+      "guider": [
+        "802",
+        0
+      ],
+      "sampler": [
+        "30",
+        0
+      ],
+      "sigmas": [
+        "801",
+        0
+      ],
+      "latent_image": [
+        "80",
+        0
+      ]
+    }
+  },
+  "50": {
+    "class_type": "LTXVSeparateAVLatent",
+    "inputs": {
+      "av_latent": [
+        "803",
+        0
+      ]
+    }
+  },
+  "51": {
+    "class_type": "VAEDecodeTiled",
+    "inputs": {
+      "samples": [
+        "50",
+        0
+      ],
+      "vae": [
+        "9",
+        0
+      ],
+      "tile_size": 512,
+      "overlap": 64,
+      "temporal_size": 64,
+      "temporal_overlap": 8
+    }
+  },
+  "52": {
+    "class_type": "LTXVAudioVAEDecode",
+    "inputs": {
+      "samples": [
+        "50",
+        1
+      ],
+      "audio_vae": [
+        "9",
+        1
+      ]
+    }
+  },
+  "53": {
+    "class_type": "CreateVideo",
+    "inputs": {
+      "images": [
+        "51",
+        0
+      ],
+      "fps": 24.0,
+      "audio": [
+        "52",
+        0
+      ]
+    }
+  },
+  "54": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "video": [
+        "53",
+        0
+      ],
+      "filename_prefix": "video/ltx_two_stage_x2",
+      "format": "auto",
+      "codec": "auto"
+    }
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "run_id": "b7f447e8c2b0410f82f0aad2bb9598d3",
+  "role": "h3",
+  "checkpoint": null,
+  "config": {
+    "gpu_ids": [
+      "all"
+    ],
+    "backend": "fsdp2_sequence",
+    "precision": "fp16",
+    "attention": "exact_chunked",
+    "reserve_gib": 0,
+    "query_chunk": 128,
+    "key_chunk": 512,
+    "dequant_rows": 256,
+    "release_after_sampling": true,
+    "cpu_offload": false,
+    "pin_memory": true,
+    "prefetch_blocks": 0,
+    "numa_policy": "none",
+    "attention_backend": null,
+    "allow_fallback": true,
+    "memory_policy": "auto",
+    "weight_placement": "gpu",
+    "sequence_mode": "token",
+    "sequence_comm_dtype": "fp32",
+    "allow_host_wrappers": false
+  },
+  "patch": {
+    "enabled": false,
+    "fp16_safe": true,
+    "debug_finite": false,
+    "mlp_chunk_tokens": 512,
+    "mlp_chunk_mode": "off"
+  },
+  "role_options": {},
+  "sampler_bridge": {
+    "eligible": true,
+    "reason": "native_euler"
+  },
+  "steps": 2,
+  "sigmas": [
+    1.0,
+    0.9230769276618958,
+    0.0
+  ],
+  "manifest": {
+    "seed": 5,
+    "noise_sha256": "d8ee94a6e89d594526e80b073d85193772539f42518eee700fd06288c6c677f1",
+    "latent_shapes": [
+      [
+        1,
+        1,
+        1088
+      ]
+    ],
+    "sampler": "sample_euler",
+    "sampler_options": {},
+    "checkpoint_revision": "See worker checkpoint identity; remote revision UNKNOWN unless catalog match",
+    "lora": "UNSUPPORTED in supplied baseline; no descriptors silently applied",
+    "cfg": 1.0
+  },
+  "sampling_wall_s": 0.020892999000352575,
+  "status": "COMPLETE",
+  "session_fingerprint": null,
+  "history": [],
+  "note": "Sampling boundary only: text encoding/VAE/video encoding are separate phases; no raw prompt stored",
+  "execution_mode": "CPU_LOCAL_CONTRACT_NO_CUDA_NO_FSDP",
+  "performance_evidence": false
+}

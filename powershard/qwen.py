@@ -20,7 +20,7 @@ from .config import shard_bounds
 class QwenConfig:
     idle_policy: str = "release"
     cache_mib: int = 256
-    mlp_chunk_mode: str = "auto"
+    mlp_chunk_mode: str = "off"
     mlp_chunk_tokens: int = 4096
 
     def __post_init__(self):
@@ -110,17 +110,24 @@ def qwen_attention(self,hidden_states,attention_mask=None,freqs_cis=None,optimiz
 
 
 def qwen_mlp(self,x):
-    from .memory_policy import mlp_plan
+    from .memory_policy import mlp_plan, mlp_budget
     from .operations import prepared_linears
     shape=x.shape;rows=x.reshape(-1,shape[-1]);options=self._ps_qwen_options
-    budget=self._ps_memory_context.get("mlp_budget_bytes",256*2**20)
-    mode=self._ps_memory_context.get("mlp_mode_override",options.mlp_chunk_mode)
-    plan=mlp_plan(len(rows),shape[-1],self.down_proj.in_features,mode,options.mlp_chunk_tokens,budget)
-    plan["requested_mode"]=options.mlp_chunk_mode
+    if options.mlp_chunk_mode=="auto":
+        budget, budget_info=mlp_budget(self._ps_memory_context, x.device)
+    else:
+        budget=self._ps_memory_context.get("mlp_budget_bytes",256*2**20)
+        budget_info=dict(budget_source="RPC boundary; no per-block allocator sampling")
+    output_bytes=rows.numel()*4
+    plan=mlp_plan(len(rows),shape[-1],self.down_proj.in_features,options.mlp_chunk_mode,options.mlp_chunk_tokens,max(0,budget-output_bytes))
+    plan.update(budget_info)
+    self._ps_mlp_report=plan
+    if self._ps_memory_context.get("_progress"):
+        self._ps_memory_context["_progress"]("mlp_plan", dict(module=self._ps_name, **plan))
+    plan["full_output_bytes"]=output_bytes
     out=torch.empty_like(rows,dtype=torch.float32)
     allowance=max(0,budget-plan["estimated_chunk_workspace_bytes"]-out.numel()*4)
-    with prepared_linears((self.gate_proj,self.up_proj,self.down_proj),allowance,
-            enabled=plan["chunks"]>1 and self._ps_memory_context.get("allow_prepared_weights",True)) as preparation:
+    with prepared_linears((self.gate_proj,self.up_proj,self.down_proj),allowance,enabled=plan["chunks"]>1) as preparation:
         plan.update(preparation)
         for a in range(0,len(rows),plan["effective_tokens"]):
             b=min(a+plan["effective_tokens"],len(rows))
@@ -131,7 +138,7 @@ def qwen_mlp(self,x):
     return out.reshape(shape)
 
 
-def install_qwen_compute(net, dispatcher, checkpoint=None, sequence=False, options=None):
+def install_qwen_compute(net, dispatcher, checkpoint=None, sequence=False, options=None, cached_qk_scales=None):
     """Родные RoPE/DeepStack/layer selection сохранены; Qwen-specific FP32 stream."""
     tracker=FiniteTracker(False)
     for name,m in net.named_modules():
@@ -139,15 +146,24 @@ def install_qwen_compute(net, dispatcher, checkpoint=None, sequence=False, optio
             m._ps_safe=True;m._ps_fp32=False
             m._ps_tracker=tracker;m._ps_finite_slot=tracker.register(name)
     from safetensors import safe_open
-    reader=safe_open(str(checkpoint.path),framework="pt",device="cpu") if checkpoint else None
+    reader=safe_open(str(checkpoint.path),framework="pt",device="cpu") if checkpoint and cached_qk_scales is None else None
     for i,layer in enumerate(net.model.layers):
+        layer.mlp._ps_name=f"model.layers.{i}.mlp"
         layer.mlp._ps_qwen_options=options or QwenConfig()
         layer.mlp._ps_memory_context={}
         layer.mlp.forward=types.MethodType(qwen_mlp,layer.mlp)
         attn=layer.self_attn
+        if cached_qk_scales is not None:
+            key=f"model.layers.{i}.self_attn"
+            scales=cached_qk_scales.get(key)
+            if scales is None or len(scales)!=2 or any(not math.isfinite(s) or s<=0 for s in scales):
+                raise RuntimeError("Phase cache invalid Qwen QK scales: "+key)
+        else:
+            scales=None
         attn._ps_dispatch=dispatcher
-        scales=[]
-        for norm in ("q_norm","k_norm"):
+        cached=scales is not None
+        scales=list(scales) if cached else []
+        for norm in (() if cached else ("q_norm","k_norm")):
             w=reader.get_tensor(f"model.layers.{i}.self_attn.{norm}.weight") if reader else getattr(attn,norm).weight.detach()
             bound=2*math.sqrt(attn.head_dim)*float(w.float().abs().max())*1.01
             scales.append(2.**max(0,math.ceil(math.log2(max(1.,bound/128.)))))
@@ -163,11 +179,9 @@ def install_qwen_compute(net, dispatcher, checkpoint=None, sequence=False, optio
                 total=x.shape[1];world=dist.get_world_size();rank=dist.get_rank()
                 last=shard_bounds(total,world-1,world)
                 _state.update(total=total,enabled=world>1 and last[1]>last[0])
-                _state["fallback_reason"] = None if _state["enabled"] else ("world_size=1" if world==1 else "ceil token split has empty last rank")
                 if not _state["enabled"]:
                     return _original(x,attention_mask,freqs_cis,optimized_attention,past_key_value)
                 a,b=shard_bounds(total,rank,world)
-                _state["local_range"]=[a,b]
                 # Native precompute: [B,1,L,D] (text) or [1,L,D]
                 # (interleaved multimodal RoPE). Sequence axis is explicitly -2.
                 if isinstance(freqs_cis,tuple):

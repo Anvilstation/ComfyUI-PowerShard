@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import sys
 import traceback
+import time
 
 settings=json.loads(Path(sys.argv[1]).read_text())
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
@@ -36,13 +37,28 @@ try:
     install_spectrum(net,spectrum)
     respond({"sequence":0,"test_mode":"CPU_SUBPROCESS_NO_FSDP","patch":patch.to_dict()})
     expected=1
+    stage_cache={};stage_directory=None
     for line in sys.stdin:
         req=json.loads(line)
         if req["command"]=="shutdown":break
         assert req["sequence"]==expected;expected+=1
         if req["command"]=="end_run":
-            respond({"sequence":req["sequence"],"spectrum_end_run":spectrum.report()});spectrum.clear();continue
-        payload=read_payload(req["input"], base_directory=req.get("stage") or None)
+            respond({"sequence":req["sequence"],"spectrum_end_run":spectrum.report()});spectrum.clear();stage_cache.clear();continue
+        if req["command"]=="idle":
+            # Plain CPU fixture: retains the native tiny model, not FSDP shards.
+            stage_cache.clear()
+            respond({"sequence":req["sequence"],"phase_offload":{"after":{"allocated":0},"test_mode":"CPU_NO_FSDP"}})
+            continue
+        if req.get("stage")!=stage_directory:
+            stage_cache.clear();stage_directory=req.get("stage")
+        payload=read_payload(req["input"],base_directory=stage_directory or None,stage_cache=stage_cache)
+        pause=settings.get("test_pause_dir")
+        if pause:
+            gate=Path(pause);(gate/"ready").touch()
+            deadline=time.monotonic()+10
+            while not (gate/"continue").exists():
+                if time.monotonic()>deadline:raise RuntimeError("CPU test gate was not released")
+                time.sleep(.01)
         metadata=payload["kwargs"].pop("_powershard_spectrum",None)
         if req["command"]=="forward":spectrum.begin(metadata)
         with torch.inference_mode(False),torch.no_grad():

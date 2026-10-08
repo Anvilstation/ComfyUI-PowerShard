@@ -1,0 +1,1028 @@
+{
+  "last_node_id": 31,
+  "last_link_id": 23,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "PowerShardConfig",
+      "pos": [
+        0,
+        0
+      ],
+      "size": [
+        380,
+        220
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "POWERSHARD_CONFIG",
+          "type": "POWERSHARD_CONFIG",
+          "links": [
+            1
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PowerShardConfig",
+        "powershard_schema": 7
+      },
+      "widgets_values": [
+        "all",
+        "gpu",
+        "fp16",
+        "auto",
+        "ulysses"
+      ]
+    },
+    {
+      "id": 2,
+      "type": "PowerShardConfigTuning",
+      "pos": [
+        0,
+        250
+      ],
+      "size": [
+        380,
+        220
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "config",
+          "type": "POWERSHARD_CONFIG",
+          "link": 1
+        }
+      ],
+      "outputs": [
+        {
+          "name": "POWERSHARD_CONFIG",
+          "type": "POWERSHARD_CONFIG",
+          "links": [
+            2,
+            6
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PowerShardConfigTuning",
+        "powershard_schema": 7
+      },
+      "widgets_values": [
+        1.5,
+        0,
+        "auto",
+        false,
+        false,
+        true,
+        "fp32",
+        "auto"
+      ]
+    },
+    {
+      "id": 3,
+      "type": "PowerShardWanOptions",
+      "pos": [
+        0,
+        500
+      ],
+      "size": [
+        380,
+        220
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "WAN_OPTIONS",
+          "type": "WAN_OPTIONS",
+          "links": [
+            7
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PowerShardWanOptions",
+        "powershard_schema": 7
+      },
+      "widgets_values": [
+        false,
+        false,
+        "auto",
+        4096,
+        "swap",
+        0,
+        "auto"
+      ]
+    },
+    {
+      "id": 5,
+      "type": "PowerShardWanT5Distributed",
+      "pos": [
+        0,
+        750
+      ],
+      "size": [
+        380,
+        220
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "config",
+          "type": "POWERSHARD_CONFIG",
+          "link": 2
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            3,
+            4
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PowerShardWanT5Distributed",
+        "powershard_schema": 7
+      },
+      "widgets_values": [
+        "umt5_xxl_fp16.safetensors",
+        "release"
+      ]
+    },
+    {
+      "id": 6,
+      "type": "CLIPTextEncode",
+      "pos": [
+        0,
+        1000
+      ],
+      "size": [
+        380,
+        220
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 3
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            12,
+            16
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode",
+        "powershard_schema": 7
+      },
+      "widgets_values": [
+        "Камера медленно облетает маяк на скалистом берегу на закате, волны разбиваются о камни, кинематографичный свет."
+      ]
+    },
+    {
+      "id": 7,
+      "type": "CLIPTextEncode",
+      "pos": [
+        0,
+        1250
+      ],
+      "size": [
+        380,
+        220
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 4
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            13,
+            17
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode",
+        "powershard_schema": 7
+      },
+      "widgets_values": [
+        "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走"
+      ]
+    },
+    {
+      "id": 30,
+      "type": "PowerShardWanLoRA",
+      "pos": [
+        420,
+        0
+      ],
+      "size": [
+        380,
+        220
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "WAN_LORA",
+          "type": "WAN_LORA",
+          "links": [
+            5
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PowerShardWanLoRA",
+        "powershard_schema": 7
+      },
+      "widgets_values": [
+        "wan2.2_t2v_lightx2v_4steps_lora_v1.1_high_noise.safetensors",
+        1.0,
+        "high_noise"
+      ]
+    },
+    {
+      "id": 31,
+      "type": "PowerShardWanLoRA",
+      "pos": [
+        420,
+        250
+      ],
+      "size": [
+        380,
+        220
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "lora",
+          "type": "WAN_LORA",
+          "link": 5
+        }
+      ],
+      "outputs": [
+        {
+          "name": "WAN_LORA",
+          "type": "WAN_LORA",
+          "links": [
+            8
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PowerShardWanLoRA",
+        "powershard_schema": 7
+      },
+      "widgets_values": [
+        "wan2.2_t2v_lightx2v_4steps_lora_v1.1_low_noise.safetensors",
+        1.0,
+        "low_noise"
+      ]
+    },
+    {
+      "id": 4,
+      "type": "PowerShardWan22MoELoader",
+      "pos": [
+        420,
+        500
+      ],
+      "size": [
+        380,
+        220
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "config",
+          "type": "POWERSHARD_CONFIG",
+          "link": 6
+        },
+        {
+          "name": "options",
+          "type": "WAN_OPTIONS",
+          "link": 7
+        },
+        {
+          "name": "lora",
+          "type": "WAN_LORA",
+          "link": 8
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            9
+          ],
+          "slot_index": 0
+        },
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            10
+          ],
+          "slot_index": 1
+        },
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [],
+          "slot_index": 2
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PowerShardWan22MoELoader",
+        "powershard_schema": 7
+      },
+      "widgets_values": [
+        "wan2.2_t2v_high_noise_14B_fp16.safetensors",
+        "wan2.2_t2v_low_noise_14B_fp16.safetensors",
+        0.875,
+        true
+      ]
+    },
+    {
+      "id": 8,
+      "type": "VAELoader",
+      "pos": [
+        420,
+        750
+      ],
+      "size": [
+        380,
+        220
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            21
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAELoader",
+        "powershard_schema": 7
+      },
+      "widgets_values": [
+        "wan_2.1_vae.safetensors"
+      ]
+    },
+    {
+      "id": 10,
+      "type": "ModelSamplingSD3",
+      "pos": [
+        420,
+        1000
+      ],
+      "size": [
+        380,
+        220
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 9
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            11
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ModelSamplingSD3",
+        "powershard_schema": 7
+      },
+      "widgets_values": [
+        5.0
+      ]
+    },
+    {
+      "id": 11,
+      "type": "ModelSamplingSD3",
+      "pos": [
+        420,
+        1250
+      ],
+      "size": [
+        380,
+        220
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 10
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            15
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ModelSamplingSD3",
+        "powershard_schema": 7
+      },
+      "widgets_values": [
+        5.0
+      ]
+    },
+    {
+      "id": 12,
+      "type": "EmptyHunyuanLatentVideo",
+      "pos": [
+        840,
+        0
+      ],
+      "size": [
+        380,
+        220
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            14
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "EmptyHunyuanLatentVideo",
+        "powershard_schema": 7
+      },
+      "widgets_values": [
+        832,
+        480,
+        81,
+        1
+      ]
+    },
+    {
+      "id": 13,
+      "type": "KSamplerAdvanced",
+      "pos": [
+        840,
+        250
+      ],
+      "size": [
+        380,
+        220
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 11
+        },
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 12
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 13
+        },
+        {
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 14
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            18
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "KSamplerAdvanced",
+        "powershard_schema": 7
+      },
+      "widgets_values": [
+        "enable",
+        42,
+        "fixed",
+        4,
+        1.0,
+        "euler",
+        "simple",
+        0,
+        2,
+        "enable"
+      ]
+    },
+    {
+      "id": 14,
+      "type": "KSamplerAdvanced",
+      "pos": [
+        840,
+        500
+      ],
+      "size": [
+        380,
+        220
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 15
+        },
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 16
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 17
+        },
+        {
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 18
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            19
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "KSamplerAdvanced",
+        "powershard_schema": 7
+      },
+      "widgets_values": [
+        "disable",
+        42,
+        "fixed",
+        4,
+        1.0,
+        "euler",
+        "simple",
+        2,
+        10000,
+        "disable"
+      ]
+    },
+    {
+      "id": 20,
+      "type": "PowerShardRelease",
+      "pos": [
+        840,
+        750
+      ],
+      "size": [
+        380,
+        220
+      ],
+      "flags": {},
+      "order": 15,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 19
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            20
+          ],
+          "slot_index": 0
+        },
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [],
+          "slot_index": 1
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PowerShardRelease",
+        "powershard_schema": 7
+      },
+      "widgets_values": [
+        true,
+        false,
+        true
+      ]
+    },
+    {
+      "id": 21,
+      "type": "VAEDecodeTiled",
+      "pos": [
+        840,
+        1000
+      ],
+      "size": [
+        380,
+        220
+      ],
+      "flags": {},
+      "order": 16,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 20
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 21
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            22
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAEDecodeTiled",
+        "powershard_schema": 7
+      },
+      "widgets_values": [
+        512,
+        64,
+        64,
+        8
+      ]
+    },
+    {
+      "id": 22,
+      "type": "CreateVideo",
+      "pos": [
+        840,
+        1250
+      ],
+      "size": [
+        380,
+        220
+      ],
+      "flags": {},
+      "order": 17,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 22
+        }
+      ],
+      "outputs": [
+        {
+          "name": "VIDEO",
+          "type": "VIDEO",
+          "links": [
+            23
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CreateVideo",
+        "powershard_schema": 7
+      },
+      "widgets_values": [
+        16.0
+      ]
+    },
+    {
+      "id": 23,
+      "type": "SaveVideo",
+      "pos": [
+        1260,
+        0
+      ],
+      "size": [
+        380,
+        220
+      ],
+      "flags": {},
+      "order": 18,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "link": 23
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "SaveVideo",
+        "powershard_schema": 7
+      },
+      "widgets_values": [
+        "video/wan22_t2v_a14b_lightning",
+        "auto",
+        "auto"
+      ]
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      0,
+      2,
+      0,
+      "POWERSHARD_CONFIG"
+    ],
+    [
+      2,
+      2,
+      0,
+      5,
+      0,
+      "POWERSHARD_CONFIG"
+    ],
+    [
+      3,
+      5,
+      0,
+      6,
+      0,
+      "CLIP"
+    ],
+    [
+      4,
+      5,
+      0,
+      7,
+      0,
+      "CLIP"
+    ],
+    [
+      5,
+      30,
+      0,
+      31,
+      0,
+      "WAN_LORA"
+    ],
+    [
+      6,
+      2,
+      0,
+      4,
+      0,
+      "POWERSHARD_CONFIG"
+    ],
+    [
+      7,
+      3,
+      0,
+      4,
+      1,
+      "WAN_OPTIONS"
+    ],
+    [
+      8,
+      31,
+      0,
+      4,
+      2,
+      "WAN_LORA"
+    ],
+    [
+      9,
+      4,
+      0,
+      10,
+      0,
+      "MODEL"
+    ],
+    [
+      10,
+      4,
+      1,
+      11,
+      0,
+      "MODEL"
+    ],
+    [
+      11,
+      10,
+      0,
+      13,
+      0,
+      "MODEL"
+    ],
+    [
+      12,
+      6,
+      0,
+      13,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      13,
+      7,
+      0,
+      13,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      14,
+      12,
+      0,
+      13,
+      3,
+      "LATENT"
+    ],
+    [
+      15,
+      11,
+      0,
+      14,
+      0,
+      "MODEL"
+    ],
+    [
+      16,
+      6,
+      0,
+      14,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      17,
+      7,
+      0,
+      14,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      18,
+      13,
+      0,
+      14,
+      3,
+      "LATENT"
+    ],
+    [
+      19,
+      14,
+      0,
+      20,
+      0,
+      "LATENT"
+    ],
+    [
+      20,
+      20,
+      0,
+      21,
+      0,
+      "LATENT"
+    ],
+    [
+      21,
+      8,
+      0,
+      21,
+      1,
+      "VAE"
+    ],
+    [
+      22,
+      21,
+      0,
+      22,
+      0,
+      "IMAGE"
+    ],
+    [
+      23,
+      22,
+      0,
+      23,
+      0,
+      "VIDEO"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.7,
+      "offset": [
+        30,
+        30
+      ]
+    }
+  },
+  "version": 0.4
+}

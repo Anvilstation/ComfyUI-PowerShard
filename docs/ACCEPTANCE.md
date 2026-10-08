@@ -1,3 +1,5 @@
+> Историческая документация до 0.5.0. Старые UI/CLI аргументы и результаты не относятся к текущей ревизии. Актуальные команды: [README_RU.md](../README_RU.md), результаты: [AUDIT_REVIEW_2026-10-04.md](../AUDIT_REVIEW_2026-10-04.md).
+
 # Приёмка на целевом сервере
 
 Не считать кодовое наличие режима его аппаратной приёмкой. Для каждого прогона сохраните дату, architecture, driver/toolkit/torch/NCCL, UUID/topology, checkpoint revision/SHA256, shape, frame count, seed, steps, dtype/backend и output.

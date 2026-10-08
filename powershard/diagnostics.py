@@ -68,6 +68,8 @@ def diagnose(comfy_path=None):
     out["numa_nodes"] = {str(p):p.read_text().strip() for p in Path("/sys/devices/system/node").glob("node*/distance")}
     try:
         import torch
+        from .telemetry import accelerator_inventory
+        out["accelerators"] = accelerator_inventory()
         out["torch"] = {"version": torch.__version__, "cuda_build": torch.version.cuda, "config": torch.__config__.show(),
                         "cuda_available": torch.cuda.is_available(), "distributed": torch.distributed.is_available(),
                         "nccl_available": torch.distributed.is_available() and torch.distributed.is_nccl_available(),

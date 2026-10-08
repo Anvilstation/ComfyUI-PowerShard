@@ -1,18 +1,14 @@
 {
   "gpu_ids": [
-    "0",
-    "1",
-    "2"
+    "all"
   ],
-  "backend": "fsdp2",
+  "backend": "fsdp2_sequence",
   "precision": "fp16",
-  "attention": "exact_chunked",
+  "weight_placement": "gpu",
+  "attention_backend": "auto",
+  "sequence_mode": "token",
+  "memory_policy": "auto",
   "reserve_gib": 2.0,
-  "timeout_s": 600,
-  "allow_unverified": false,
-  "release_after_sampling": true,
-  "cpu_offload": false,
-  "pin_memory": true,
   "prefetch_blocks": 0,
   "numa_policy": "none"
 }

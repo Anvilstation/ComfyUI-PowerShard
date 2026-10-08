@@ -1,3 +1,5 @@
+> Историческая документация до 0.5.0. Старые UI/CLI аргументы и результаты не относятся к текущей ревизии. Актуальные команды: [README_RU.md](../README_RU.md), результаты: [AUDIT_REVIEW_2026-10-04.md](../AUDIT_REVIEW_2026-10-04.md).
+
 # PowerShard 0.4: MLP, память, Qwen и Spectrum
 
 Продолжена база `f4a53c8a2e17c4f01741e65ef46deffc36531071` (0.3.0), без переписывания runtime или ComfyUI core. Новые настройки добавлены после прежних widgets. Старые JSON workflows не изменились. Python 3.11 и установленный серверный torch/CUDA/NCCL/custom wheel заменять не нужно.

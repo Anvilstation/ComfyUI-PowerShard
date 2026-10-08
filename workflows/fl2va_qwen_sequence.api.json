@@ -2,20 +2,11 @@
   "1": {
     "class_type": "PowerShardConfig",
     "inputs": {
-      "gpu_ids": "0,1,2",
-      "backend": "fsdp2_sequence",
+      "gpu_ids": "all",
+      "weight_placement": "cpu",
       "precision": "int8_fp16",
-      "reserve_gib": 2.0,
-      "timeout_s": 1800,
-      "allow_unverified": false,
-      "release_after_sampling": true,
-      "cpu_offload": true,
-      "pin_memory": true,
-      "prefetch_blocks": 0,
-      "numa_policy": "none",
       "attention_backend": "sdpa",
-      "allow_fallback": true,
-      "memory_policy": "auto"
+      "sequence_mode": "token"
     }
   },
   "2": {
@@ -25,7 +16,8 @@
       "config": [
         "1",
         0
-      ]
+      ],
+      "keep_in_memory": true
     }
   },
   "19": {
@@ -35,11 +27,19 @@
         "2",
         0
       ],
-      "enabled": true,
       "fp16_safe": true,
-      "debug_finite": false,
-      "mlp_chunk_tokens": 4096,
-      "mlp_chunk_mode": "auto"
+      "debug_finite": false
+    }
+  },
+  "23": {
+    "class_type": "PowerShardH3MLP",
+    "inputs": {
+      "model": [
+        "19",
+        0
+      ],
+      "mode": "off",
+      "chunk_tokens": 4096
     }
   },
   "3": {
@@ -52,9 +52,7 @@
       ],
       "precision": "int8_fp16",
       "idle_policy": "cpu_shards",
-      "cache_mib": 256,
-      "mlp_chunk_mode": "auto",
-      "mlp_chunk_tokens": 4096
+      "cache_mib": 256
     }
   },
   "4": {
@@ -73,7 +71,7 @@
     "class_type": "MiniMaxH3ImageToVideo",
     "inputs": {
       "clip": [
-        "3",
+        "24",
         0
       ],
       "vae": [
@@ -90,7 +88,7 @@
     "class_type": "BasicGuider",
     "inputs": {
       "model": [
-        "19",
+        "23",
         0
       ],
       "conditioning": [
@@ -115,7 +113,7 @@
     "class_type": "BasicScheduler",
     "inputs": {
       "model": [
-        "19",
+        "23",
         0
       ],
       "scheduler": "simple",
@@ -156,7 +154,8 @@
         0
       ],
       "preserve_qwen_cpu_shards": true,
-      "clear_conditioning_cache": false
+      "clear_conditioning_cache": false,
+      "preserve_h3_cpu_shards": true
     }
   },
   "13": {
@@ -227,20 +226,22 @@
   "21": {
     "class_type": "PowerShardConfig",
     "inputs": {
-      "gpu_ids": "0,1,2",
-      "backend": "fsdp2_sequence",
+      "gpu_ids": "all",
+      "weight_placement": "cpu",
       "precision": "int8_fp16",
-      "reserve_gib": 2.0,
-      "timeout_s": 1800,
-      "allow_unverified": false,
-      "release_after_sampling": true,
-      "cpu_offload": true,
-      "pin_memory": true,
-      "prefetch_blocks": 0,
-      "numa_policy": "none",
       "attention_backend": "sdpa",
-      "allow_fallback": true,
-      "memory_policy": "auto"
+      "sequence_mode": "token"
+    }
+  },
+  "24": {
+    "class_type": "PowerShardQwenMLP",
+    "inputs": {
+      "clip": [
+        "3",
+        0
+      ],
+      "mode": "off",
+      "chunk_tokens": 4096
     }
   },
   "20": {

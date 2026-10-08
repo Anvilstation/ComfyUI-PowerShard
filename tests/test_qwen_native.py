@@ -32,10 +32,34 @@ def qwen_factory(h3_factory,monkeypatch):
     return make
 
 
+def test_qwen_cached_qk_scales_install_on_meta_without_weight_reads(qwen_factory,monkeypatch):
+    import safetensors
+    encoder=qwen_factory()
+    net=encoder.qwen3vl_32b.transformer
+    net.to_empty(device="meta")
+    cached={f"model.layers.{i}.self_attn":(8.,4.) for i in range(len(net.model.layers))}
+    monkeypatch.setattr(safetensors,"safe_open",lambda *a,**kw:pytest.fail("Qwen norm checkpoint read on resume"))
+    install_qwen_compute(net,AttentionDispatcher(DistributedConfig(attention_backend="sdpa")),
+                         checkpoint=object(),cached_qk_scales=cached)
+    assert all(layer.self_attn._ps_qk_scales==[8.,4.] for layer in net.model.layers)
+
+
+@pytest.mark.parametrize("mode",["off","manual"])
+def test_qwen_fixed_mlp_mode_does_not_sample_allocator(qwen_factory,monkeypatch,mode):
+    import powershard.memory_policy as policy
+    from powershard.qwen import QwenConfig
+    net=qwen_factory().qwen3vl_32b.transformer
+    install_qwen_compute(net,AttentionDispatcher(DistributedConfig(attention_backend="sdpa")),
+                         options=QwenConfig(mlp_chunk_mode=mode,mlp_chunk_tokens=4))
+    monkeypatch.setattr(policy,"mlp_budget",lambda *a:pytest.fail("Qwen fixed MLP sampled live allocator"))
+    with torch.no_grad():result=net.model.layers[0].mlp(torch.randn(2,11,32))
+    assert torch.isfinite(result).all()
+    assert net.model.layers[0].mlp._ps_mlp_report["budget_source"].startswith("RPC boundary")
+
+
 @pytest.mark.parametrize("image",[False,True,"video"])
 @pytest.mark.parametrize("quant",[False,True])
-@pytest.mark.parametrize("profile",["custom","ram_min"])
-def test_native_qwen_encoder_conditioning(qwen_factory,image,quant,profile):
+def test_native_qwen_encoder_conditioning(qwen_factory,image,quant):
     native=qwen_factory();encoder=copy.deepcopy(native)
     if quant:
         net=encoder.qwen3vl_32b.transformer
@@ -55,14 +79,8 @@ def test_native_qwen_encoder_conditioning(qwen_factory,image,quant,profile):
                 dequantize_rows(q.weight,q.weight_scale,True,group,dtype=torch.float32))
     else:
         encoder.half() # only dense test reference; never applied to quantized runtime
-    cfg=DistributedConfig(gpu_ids=("0",),attention_backend="sdpa",memory_profile=profile,dequant_rows=8,workspace_mib=1)
-    dispatch=AttentionDispatcher(cfg)
+    dispatch=AttentionDispatcher(DistributedConfig(gpu_ids=("0",),attention_backend="sdpa"))
     tracker=install_qwen_compute(encoder.qwen3vl_32b.transformer,dispatch)
-    if cfg.min_vram:
-        from powershard.memory_policy import apply_linear_policy,apply_workspace_policy
-        apply_linear_policy(encoder.qwen3vl_32b.transformer,cfg)
-        for layer in encoder.qwen3vl_32b.transformer.model.layers:
-            layer.mlp._ps_memory_context=apply_workspace_policy(dict(mlp_budget_bytes=16384),cfg)
     root=QwenEntrypoint(encoder);root._ps_device=torch.device("cpu")
     tokens=[(10,1.),(11,1.),(12,1.)]
     if image:
@@ -81,8 +99,6 @@ def test_native_qwen_encoder_conditioning(qwen_factory,image,quant,profile):
     torch.testing.assert_close(actual[0],reference[0],rtol=.025,atol=.006)
     torch.testing.assert_close(actual[2]["minimax_token_tags"],reference[2]["minimax_token_tags"])
     assert dispatch.report()["call_counts"]
-    if cfg.min_vram:
-        assert any(key.endswith(':sdpa_tiled') for key in dispatch.report()['call_counts'])
     if quant:assert any(p.dtype==torch.int8 for p in root.parameters())
 
 

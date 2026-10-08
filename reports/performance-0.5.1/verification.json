@@ -1,0 +1,157 @@
+{
+  "version": "0.5.1",
+  "date": "2026-10-04",
+  "environment": {
+    "powershard": "0.5.1",
+    "commit": "60b94a99b7908d3d81d83641c67a5f3c24a7a8c4",
+    "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+    "architecture": "x86_64",
+    "source_sha256": "63999b3cee8abcfd3e207db2da6416efb65935e148175cb66def38d0e9ceb0de",
+    "torch": "2.12.0+cpu",
+    "torch_cuda": null
+  },
+  "comfy_sha": "f1072eb0350638a3390ddb6afbcaa8c6b237c6fd",
+  "pytest": {
+    "total": 255,
+    "passed": 239,
+    "skipped": 16,
+    "failures": [],
+    "skip_details": [
+      {
+        "test": "test_real_ulysses_collectives[3]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_real_ulysses_collectives[4]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_real_ulysses_collectives[5]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_real_ulysses_collectives[6]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[token-math-3]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[token-math-4]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[token-math-5]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[token-math-6]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[ulysses-math-3]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[ulysses-math-4]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[ulysses-math-5]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[ulysses-math-6]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[ulysses-sdpa-3]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[ulysses-sdpa-4]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[ulysses-sdpa-5]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[ulysses-sdpa-6]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      }
+    ]
+  },
+  "checks": {
+    "ruff_F821_F823": "PASS",
+    "compileall": "PASS",
+    "javascript_syntax": "PASS",
+    "git_diff_whitespace": "PASS",
+    "native_comfy_sampler_cpu": {
+      "status": "PASS",
+      "device": "CPU x86_64",
+      "sampler": "native ComfyUI Euler/simple CFG=1",
+      "steps": 2,
+      "seeds": [
+        5,
+        6,
+        5
+      ],
+      "audio_video": "PASS",
+      "clone_model_options": "PASS",
+      "seed_change_repeat": "PASS",
+      "reject_patch_before_RPC": "PASS",
+      "transport": "TEST_LOCAL_CONTRACT_ONLY",
+      "distributed_CUDA": "NOT_RUN",
+      "real_checkpoint": "NOT_RUN"
+    }
+  },
+  "hardware": {
+    "CUDA": "NOT_RUN: no CUDA device",
+    "NCCL": "NOT_RUN: no CUDA device",
+    "POWER9": "NOT_RUN: runtime x86_64",
+    "real_H3_checkpoint": "NOT_RUN: weights are on user server",
+    "ATS": "NOT_RUN: no target hardware",
+    "performance_after_fix": "NOT_MEASURED_ON_AC922",
+    "actual_FA_Triton_kernels_after_fix": "NOT_RUN: server probe provided"
+  },
+  "evidence": {
+    "uploaded_logs": "uploaded-log-analysis.json",
+    "attention_probe_cpu_expected": {
+      "status": "NOT_RUN",
+      "reason": "CUDA unavailable",
+      "accelerators": {
+        "environment": {
+          "powershard": "0.5.1",
+          "commit": "60b94a99b7908d3d81d83641c67a5f3c24a7a8c4",
+          "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+          "architecture": "x86_64",
+          "source_sha256": "63999b3cee8abcfd3e207db2da6416efb65935e148175cb66def38d0e9ceb0de",
+          "torch": "2.12.0+cpu",
+          "torch_cuda": null
+        },
+        "packages": {
+          "flash-attn": "NOT_INSTALLED",
+          "vllm-flash-attn": "NOT_INSTALLED",
+          "triton": "NOT_INSTALLED",
+          "power-torch-cuda124": "NOT_INSTALLED",
+          "torch": "2.12.0+cpu"
+        },
+        "architecture": "x86_64",
+        "matmul": {
+          "allow_fp16_reduced_precision_reduction": true,
+          "allow_fp16_accumulation": false
+        },
+        "triton": {
+          "explicit_powershard_kernel_path": false,
+          "torch_compile": false,
+          "execution": "NOT_USED_BY_POWERSHARD",
+          "note": "Installed version does not prove execution. Custom attention providers may have their own kernels; inspect a CUDA trace."
+        }
+      }
+    },
+    "attention_probe_expected_exit_code": 2
+  },
+  "warning": "Emulated tensor collectives test layout/math only. They do not certify NCCL transport or GPU performance."
+}

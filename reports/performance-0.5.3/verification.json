@@ -1,0 +1,184 @@
+{
+  "version": "0.5.3",
+  "date": "2026-10-05",
+  "environment": {
+    "powershard": "0.5.3",
+    "commit": "60b94a99b7908d3d81d83641c67a5f3c24a7a8c4",
+    "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+    "architecture": "x86_64",
+    "source_sha256": "0e960d5321092850a94e8558c8c33c74a4838dc8771cdbb4362e84e97c3af34f",
+    "torch": "2.12.0+cpu",
+    "torch_cuda": null
+  },
+  "comfy_sha": "f1072eb0350638a3390ddb6afbcaa8c6b237c6fd",
+  "pytest": {
+    "total": 314,
+    "passed": 298,
+    "skipped": 16,
+    "failures": [],
+    "skip_details": [
+      {
+        "test": "test_real_ulysses_collectives[3]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_real_ulysses_collectives[4]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_real_ulysses_collectives[5]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_real_ulysses_collectives[6]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[token-math-3]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[token-math-4]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[token-math-5]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[token-math-6]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[ulysses-math-3]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[ulysses-math-4]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[ulysses-math-5]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[ulysses-math-6]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[ulysses-sdpa-3]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[ulysses-sdpa-4]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[ulysses-sdpa-5]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[ulysses-sdpa-6]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      }
+    ]
+  },
+  "checks": {
+    "git_diff_whitespace": "PASS",
+    "ruff_F821_F823": "PASS",
+    "compileall": "PASS",
+    "javascript_syntax": "PASS"
+  },
+  "native_comfy_cpu": {
+    "status": "PASS",
+    "device": "CPU x86_64",
+    "sampler": "native ComfyUI Euler/simple CFG=1",
+    "steps": 2,
+    "seeds": [
+      5,
+      6,
+      5
+    ],
+    "audio_video": "PASS",
+    "clone_model_options": "PASS",
+    "seed_change_repeat": "PASS",
+    "reject_patch_before_RPC": "PASS",
+    "transport": "TEST_LOCAL_CONTRACT_ONLY",
+    "distributed_CUDA": "NOT_RUN",
+    "real_checkpoint": "NOT_RUN"
+  },
+  "matrix": [
+    {
+      "axis": "wire",
+      "cases": 2,
+      "status": "GRAPH_VALIDATED_NOT_SUBMITTED"
+    },
+    {
+      "axis": "prefetch",
+      "cases": 3,
+      "status": "GRAPH_VALIDATED_NOT_SUBMITTED"
+    }
+  ],
+  "new_tests": [
+    "test_cpu_cache_copies_only_local_rows_and_restores_without_checkpoint[0]",
+    "test_cpu_cache_copies_only_local_rows_and_restores_without_checkpoint[1]",
+    "test_cpu_cache_copies_only_local_rows_and_restores_without_checkpoint[2]",
+    "test_cpu_cache_copies_only_local_rows_and_restores_without_checkpoint[3]",
+    "test_cpu_cache_copies_only_local_rows_and_restores_without_checkpoint[4]",
+    "test_cache_restore_refuses_incompatible_state[names]",
+    "test_cache_restore_refuses_incompatible_state[dtype]",
+    "test_cache_restore_refuses_incompatible_state[shape]",
+    "test_cache_restore_refuses_incompatible_state[bounds]",
+    "test_non_sharded_model_cannot_be_parked",
+    "test_owner_drops_live_graph_and_managed_pool_and_resumes_exactly[gpu]",
+    "test_owner_drops_live_graph_and_managed_pool_and_resumes_exactly[ats]",
+    "test_failed_resume_preserves_ram_cache",
+    "test_idle_status_uses_parking_measurement_not_previous_vram",
+    "test_parked_zero_vram_is_not_replaced_by_active_memory_budget",
+    "test_retention_parks_every_active_placement_in_ram[deactivate-gpu]",
+    "test_retention_parks_every_active_placement_in_ram[deactivate-cpu]",
+    "test_retention_parks_every_active_placement_in_ram[deactivate-ats]",
+    "test_retention_parks_every_active_placement_in_ram[finish_sampling-gpu]",
+    "test_retention_parks_every_active_placement_in_ram[finish_sampling-cpu]",
+    "test_retention_parks_every_active_placement_in_ram[finish_sampling-ats]",
+    "test_retention_parks_every_active_placement_in_ram[release-gpu]",
+    "test_retention_parks_every_active_placement_in_ram[release-cpu]",
+    "test_retention_parks_every_active_placement_in_ram[release-ats]",
+    "test_fixed_mlp_mode_never_samples_live_allocator[off]",
+    "test_fixed_mlp_mode_never_samples_live_allocator[manual]",
+    "test_progress_is_throttled_but_first_mlp_and_final_status_persist",
+    "test_baseline_wire_and_prefetch_controls_do_change_config",
+    "test_schema6_tuning_appends_new_widgets_without_reordering",
+    "test_native_h3_cpu_cache_roundtrip_with_canonical_names_under_gates",
+    "test_h3_qk_metadata_resume_reads_no_checkpoint_norm_weights",
+    "test_phase_history_is_available_without_closing_ram_owner",
+    "test_critical_rank_wall_time_is_max_not_sum_and_missing_stays_unknown",
+    "test_inputs_settings_and_profile_are_not_mixed",
+    "test_session_and_run_wrappers_do_not_double_count_same_rpc"
+  ],
+  "hardware": {
+    "CUDA": "NOT_RUN",
+    "NCCL": "NOT_RUN",
+    "POWER9": "NOT_RUN",
+    "production_checkpoints": "NOT_RUN",
+    "ATS": "NOT_RUN",
+    "FA_kernels": "NOT_RUN",
+    "performance": "NOT_MEASURED",
+    "GPU_RAM_parking": "NOT_RUN"
+  },
+  "input_evidence": {
+    "new_053_logs": "NOT_PROVIDED",
+    "historical_log_analysis": "reports/performance-0.5.1/uploaded-log-analysis.json"
+  },
+  "research": [
+    {
+      "url": "https://docs.pytorch.org/docs/2.12/distributed.fsdp.fully_shard.html",
+      "scope": "public explicit prefetch, fixed offload policy, DTensor local state"
+    },
+    {
+      "url": "https://docs.pytorch.org/docs/2.12/notes/cuda.html",
+      "scope": "CUDA synchronization, allocator cache, scoped MemPool/UVM costs"
+    }
+  ],
+  "note": "Real CPU native/math/protocol tests + mocked local DTensor ownership, not CUDA/FSDP/NCCL/ATS certification"
+}

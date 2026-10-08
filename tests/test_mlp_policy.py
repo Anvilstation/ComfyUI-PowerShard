@@ -48,7 +48,7 @@ def test_mlp_modes_match_unchunked(quant,mode,chunk):
 
 def test_preparation_is_once_per_active_mlp(monkeypatch):
     import powershard.operations as ops
-    m=mlp(True);m._ps_mlp_policy=H3PatchConfig(True,True,False,2);m._ps_mlp_chunk=2
+    m=mlp(True);m._ps_mlp_policy=H3PatchConfig(True,True,False,2,"manual");m._ps_mlp_chunk=2
     count=0;original=ops.dequantize_rows
     def counted(*a,**kw):
         nonlocal count
@@ -72,7 +72,39 @@ def test_preparation_releases_after_error():
 def test_memory_estimate_never_rejects_manual():
     assert mlp_plan(20000,5376,14336,"off",512,0)["effective_tokens"]==20000
     assert mlp_plan(20000,5376,14336,"manual",16384,0)["effective_tokens"]==16384
-    assert mlp_plan(20000,5376,14336,"auto",512,0)["effective_tokens"]==1
+    exhausted=mlp_plan(20000,5376,14336,"auto",512,0)
+    assert exhausted["effective_tokens"]==256 and exhausted["estimate_exhausted"]
     assert plan_forward(1,2,3,4,5,2,"auto")["effective_prefetch"]==0
-    assert H3PatchConfig(**{"mlp_chunk_tokens":8192}).mlp_chunk_mode=="manual"
+    assert H3PatchConfig(**{"mlp_chunk_tokens":8192}).mlp_chunk_mode=="off"
     with pytest.raises(ValueError):H3PatchConfig(mlp_chunk_tokens=0)
+
+
+def test_auto_does_not_create_a_tiny_tail_when_all_tokens_fit():
+    plan=mlp_plan(9307,5376,14336,"auto",4096,10*2**30)
+    assert plan["effective_tokens"]==9307 and plan["chunks"]==1
+
+
+@pytest.mark.parametrize("free,reserved,allocated",[
+    (3585671168,11750342656,294539776),
+    (4336058368,10869538816,294539776),
+    (5019795456,10536091648,294539776),
+])
+def test_next_step_reuses_cache_from_uploaded_runs(free,reserved,allocated):
+    # Actual end-of-forward samples from the AC922 logs. The old calculation
+    # made workspace zero on the next step while ~10 GiB was reusable.
+    args=(free,0,2419587072,3584573440,774209024,0,"auto")
+    assert plan_forward(*args)["mlp_budget_bytes"]==0
+    corrected=plan_forward(*args,reusable_bytes=reserved-allocated)
+    mlp=mlp_plan(11634,5376,14336,"auto",4096,corrected["mlp_budget_bytes"]-250177536)
+    assert mlp["chunks"]==1 and not mlp["estimate_exhausted"]
+
+
+def test_pending_stream_blocks_are_not_credited(monkeypatch):
+    from powershard.memory_policy import available_memory
+    monkeypatch.setattr(torch.cuda,"mem_get_info",lambda device:(100,2000))
+    monkeypatch.setattr(torch.cuda,"memory_allocated",lambda device:300)
+    monkeypatch.setattr(torch.cuda,"memory_reserved",lambda device:1400)
+    monkeypatch.setattr(torch.cuda,"memory_stats",lambda device:{"active_bytes.all.current":800})
+    monkeypatch.setattr(torch.cuda.memory,"get_allocator_backend",lambda:"native")
+    snapshot=available_memory(torch.device("cuda:0"))
+    assert snapshot["reusable_cache_bytes"]==600 and snapshot["available_bytes"]==700

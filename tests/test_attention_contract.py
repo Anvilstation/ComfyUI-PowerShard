@@ -71,6 +71,47 @@ def fake_module(calls):
     return SimpleNamespace(flash_attn_varlen_func=varlen,__file__=__file__)
 
 
+def test_user_shim_prefers_real_varlen_preserves_lengths_and_scale():
+    from powershard.attention_providers import FlashProvider
+    calls=[];module=fake_module(calls);module.__version__="2.7.2+shim"
+    def broken_dense(*args,**kwargs):raise AssertionError("original shim dense incorrectly assumes equal Q/K lengths")
+    module.flash_attn_func=broken_dense
+    with pytest.warns(UserWarning,match="shim"):
+        provider=FlashProvider(module=module)
+    q,k,v=tensors(dtype=torch.float16)
+    identity=dict(provider.identity)
+    out=provider(q,k,v,O(softmax_scale=.13))
+    torch.testing.assert_close(out.float(),reference(q,k,v,O(softmax_scale=.13)),atol=.003,rtol=.003)
+    assert calls[0]["cuq"]==[0,5,10] and calls[0]["cuk"]==[0,7,14]
+    assert calls[0]["scale"]==.13 and identity==provider.identity
+
+
+def test_missing_native_flash_uses_scoped_shim_not_global_shadow(monkeypatch):
+    import importlib
+    from powershard import attention_providers as providers
+    calls=[];module=fake_module(calls)
+    monkeypatch.setitem(sys.modules,"vllm_flash_attn",module)
+    monkeypatch.delitem(sys.modules,"powershard.flash_attn_shim",raising=False)
+    monkeypatch.delenv("POWERSHARD_FLASH_ATTN_SHIM",raising=False)
+    real_import=importlib.import_module
+    def importer(name,*args,**kwargs):
+        if name=="flash_attn":raise ModuleNotFoundError("No module named flash_attn_2_cuda")
+        return real_import(name,*args,**kwargs)
+    monkeypatch.setattr(providers.importlib,"import_module",importer)
+    before=sys.modules.get("flash_attn");paths=list(sys.path)
+    with pytest.warns(UserWarning,match="shim"):
+        provider=providers.FlashProvider()
+    assert provider.identity["actual_module"]=="powershard.flash_attn_shim"
+    assert "flash_attn_2_cuda" in provider.identity["native_import_error"]
+    q,k,v=tensors(dtype=torch.float16)
+    out=provider(q,k,v,O(softmax_scale=.9))
+    torch.testing.assert_close(out.float(),reference(q,k,v,O(softmax_scale=.9)),atol=.003,rtol=.003)
+    assert sys.modules.get("flash_attn") is before and sys.path==paths
+    shim=provider.module
+    dense=shim.flash_attn_func(q,k,v,softmax_scale=.13)
+    torch.testing.assert_close(dense.float(),reference(q,k,v,O(softmax_scale=.13)),atol=.003,rtol=.003)
+
+
 @pytest.mark.parametrize('scale',[.12,.9])
 @pytest.mark.parametrize('hk',[1,2,4])
 def test_custom_dense_cross_gqa_batch_noncontiguous(scale,hk):

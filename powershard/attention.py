@@ -43,29 +43,56 @@ def gather_rows(x, total, group=None, dtype=None):
     if x.shape[0] != b - a:
         raise ValueError("Неверное локальное число tokens")
     width = (total + world - 1) // world
-    scale = None
-    if dtype == torch.float16 and x.dtype != torch.float16:
-        from .fp16_safe import power2_scale
-        # Отдельная граница каждого trailing component: K не теряет диапазон
-        # из-за крупного V. Малый MAX collective, без GPU->CPU scalar sync.
-        bound = x.float().abs().amax(0, keepdim=True) if x.shape[0] else torch.zeros((1,)+x.shape[1:],device=x.device)
-        dist.all_reduce(bound, op=dist.ReduceOp.MAX, group=group)
-        scale = power2_scale(bound / 16384.)
-        comm = (x.float() / scale).half()
-    else:
-        comm = x if dtype is None else x.to(dtype)
-    # Владение результатом принадлежит caller. CUDA allocator может повторно
-    # использовать освобождённую память; живые Tensor не перезаписываются.
-    padded = torch.zeros((width,) + tuple(x.shape[1:]), dtype=comm.dtype, device=x.device)
-    padded[:comm.shape[0]].copy_(comm)
-    output = torch.empty((width * world,) + tuple(x.shape[1:]), dtype=comm.dtype, device=x.device)
-    dist.all_gather_into_tensor(output, padded.contiguous(), group=group)
+    comm = x if dtype is None else x.to(dtype)
+    # CUDA allocator reuses released storage. The old global dict retained
+    # every video shape and returned aliases overwritten by later calls.
+    padded = comm.new_zeros((width,) + tuple(x.shape[1:]))
+    padded[:len(comm)].copy_(comm)
+    output = comm.new_empty((width * world,) + tuple(x.shape[1:]))
+    dist.all_gather_into_tensor(output, padded, group=group)
     result = output[:total]
-    if scale is not None:
-        return (result.float() * scale).to(x.dtype)
-    if dtype is None:
-        return result
-    return result.to(x.dtype)
+    return result if dtype is None else result.to(x.dtype)
+
+
+def ulysses_heads_to_sequence(tensors, total, heads, group=None):
+    """Local rows/all heads -> global rows/head shard for ANY world size.
+
+    Zero heads extend H to ceil(H/world)*world. Remove token padding BEFORE
+    softmax and artificial heads after the inverse. Q/K/V are packed INSIDE
+    each destination slice: [world, 3, width, h, D].
+    """
+    world, rank = dist.get_world_size(group), dist.get_rank(group)
+    width, h = math.ceil(total / world), math.ceil(heads / world)
+    a, b = shard_bounds(total, rank, world)
+    n, _, dim = tensors[0].shape
+    if n != b-a or any(t.shape != (n, heads, dim) for t in tensors):
+        raise ValueError("Ulysses local token/head geometry mismatch")
+    parts = []
+    for t in tensors:
+        padded = t.new_zeros((width, h*world, dim))
+        padded[:n, :heads].copy_(t)
+        parts.append(padded.view(width, world, h, dim).transpose(0, 1))
+    send = torch.stack(parts, dim=1).contiguous()
+    recv = torch.empty_like(send)
+    dist.all_to_all_single(recv, send, group=group)
+    full = recv.permute(1, 0, 2, 3, 4).reshape(len(tensors), world*width, h, dim)
+    return tuple(t[:total] for t in full), h*world, send.numel()*send.element_size()
+
+
+def ulysses_sequence_to_heads(out, total, heads, group=None):
+    """Inverse permutation: remove artificial heads, keep all real tokens."""
+    world, rank = dist.get_world_size(group), dist.get_rank(group)
+    width = math.ceil(total / world)
+    h, dim = out.shape[-2:]
+    if out.shape[0] != total or h != math.ceil(heads / world):
+        raise ValueError("Ulysses global token/head geometry mismatch")
+    padded = out.new_zeros((world*width, h, dim))
+    padded[:total].copy_(out)
+    send = padded.view(world, width, h, dim)
+    recv = torch.empty_like(send)
+    dist.all_to_all_single(recv, send, group=group)
+    a, b = shard_bounds(total, rank, world)
+    return recv.transpose(0, 1)[:b-a].reshape(b-a, world*h, dim)[:, :heads].contiguous()
 
 
 def rope_split_half(q, table):
@@ -77,105 +104,81 @@ def rope_split_half(q, table):
 
 
 def attention_forward(self, x, rope_freqs=None, transformer_options=None):
-    config = self._ps_config
     n = x.shape[0]
-    q, k, v = self.qkv_proj(x).split(self.heads * self.head_dim, dim=-1)
+    q, k, v = self.qkv_proj(x).split(self.heads*self.head_dim, dim=-1)
     q = self.q_norm(q.reshape(n, self.heads, self.head_dim))
     k = self.k_norm(k.reshape(n, self.heads, self.head_dim))
     v = v.reshape(n, self.heads, self.head_dim)
     if rope_freqs is not None:
         q, k = rope_split_half(q, rope_freqs), rope_split_half(k, rope_freqs)
-    state = getattr(self, "_ps_sequence", None)
-    if state is not None and state.get("enabled", True):
-        from .telemetry import region
-        if state.get("ulysses"):
-            with region("sequence_ulysses_all_to_all"):
-                # Ulysses: вход n = ЛОКАЛЬНЫЕ tokens [a:b], все heads.
-                # Прямой all-to-all по head-оси: отправляю world head-чанков,
-                # получаю от каждого rank ЕГО head-чанк на ПОЛНОЙ
-                # последовательности (padded width, как в gather_rows).
-                # После обмена q/k/v: [width, h, D] — полная длина, свой
-                # head-чанк. Attention считается точно на полной длине.
-                world = dist.get_world_size()
-                rank = dist.get_rank()
-                h = self.heads // world
-                total = state["total"]
-                width = (total + world - 1) // world
-                def split_heads(t):
-                    # [n, H, D] -> [world, n, h, D]: chunk j = head-группа j.
-                    padded = t.new_zeros((width, self.heads, self.head_dim))
-                    padded[:n] = t
-                    return padded.reshape(width, world, h, self.head_dim).transpose(0, 1).contiguous()
-                q_part, k_part, v_part = split_heads(q), split_heads(k), split_heads(v)
-                recv_shape = (world, width, h, self.head_dim)
-                q_g = torch.zeros(recv_shape, dtype=q.dtype, device=q.device)
-                # Leading axis is DESTINATION rank, not K/V.
-                kv_in = torch.stack((k_part, v_part), dim=1).contiguous()
-                kv_g = torch.empty_like(kv_in)
-                dist.all_to_all_single(q_g, q_part)
-                dist.all_to_all_single(kv_g, kv_in)
-                # q_g: [world, width, h, D], world-ось = sender rank; sender-порядок
-                # = порядок contiguous token-чанков, поэтому flatten первых двух
-                # осей даёт padded глобальную последовательность (i,j) -> i*width+j.
-                # Padding живёт только в хвосте последнего чанка -> [:total] чистит.
-                q = q_g.reshape(width * world, h, self.head_dim)[:total]
-                kv = kv_g.permute(1,0,2,3,4).reshape(2, width * world, h, self.head_dim)
-                k, v = kv[0][:total], kv[1][:total]
-            state["kv_collectives"] = state.get("kv_collectives",0)+2
-            state["kv_gathered_bytes"] = state.get("kv_gathered_bytes",0)+q_part.numel()*q.element_size()+kv_in.numel()*kv_in.element_size()
-            state["ulysses_local_heads"] = h
-        else:
-            with region("sequence_KV_all_gather"):
-                # Одинаковый dtype/layout K/V: один collective вместо двух, без
-                # изменения точности/байтов. Padding удаляется до attention.
-                # FP16 exchange scales finite FP32 values BEFORE conversion.
-                comm_dtype = {"fp16": torch.float16, "fp32": torch.float32}.get(
-                    state.get("comm_dtype"), None)
-                kv = gather_rows(torch.stack((k,v),dim=1),state["total"],dtype=comm_dtype)
-                k,v = kv.unbind(1)
-            state["kv_collectives"] = state.get("kv_collectives",0)+1
-            element_bytes = torch.empty((),dtype=comm_dtype or kv.dtype).element_size()
-            state["kv_gathered_bytes"] = state.get("kv_gathered_bytes",0)+math.ceil(state["total"]/dist.get_world_size())*dist.get_world_size()*2*self.heads*self.head_dim*element_bytes
-            if comm_dtype == torch.float16 and kv.dtype != torch.float16:
-                state["scale_all_reduces"] = state.get("scale_all_reduces",0)+1
-    from .attention_contract import AttentionOptions
     safe = getattr(self.qkv_proj, "_ps_safe", False)
-    scale = self.head_dim**-.5
-    restore_v = 1.
-    if safe and self._ps_attention.effective != "math":
-        # RMSNorm даёт аналитическую границу Q/K; коэффициенты получены один
-        # раз из небольших norm weights ДО FSDP, не .item() в каждом блоке.
-        sq,sk = self._ps_qk_scales
-        q,k = (q.float()/sq).half(),(k.float()/sk).half()
+    state = getattr(self, "_ps_sequence", None)
+    sequence = state is not None and state.get("enabled", False)
+    from .telemetry import region
+    comm_dtype = None
+    from .attention_contract import AttentionOptions
+    scale, restore_v = self.head_dim**-.5, 1.
+    scaled_wire = (sequence and safe and self._ps_attention.effective != "math"
+                   and state["comm_dtype"] == "fp16")
+    if scaled_wire:
+        # Normalize BEFORE exchange. Q/K have checkpoint-derived RMS/RoPE
+        # bounds. V uses one device-side global maximum so every rank has the
+        # same scale, including uneven/padded head shards. Raw large FP32 V
+        # is never blindly cast to half. Final residual gather stays FP32.
+        sq, sk = self._ps_qk_scales
+        q, k = (q.float()/sq).half(), (k.float()/sk).half()
+        from .fp16_safe import power2_scale
+        maximum = v.float().abs().amax()
+        with region("sequence_V_scale_MAX"):
+            dist.all_reduce(maximum, op=dist.ReduceOp.MAX)
+        state["scale_collectives"] += 1
+        restore_v = power2_scale(maximum/16384.)
+        v = (v.float()/restore_v).half()
+        scale *= sq*sk
+    if sequence:
+        if state["ulysses"]:
+            with region("sequence_ulysses_QKV_all_to_all"):
+                (q, k, v), padded_heads, exchanged_bytes = ulysses_heads_to_sequence(
+                    (q, k, v), state["total"], self.heads)
+            state["padded_heads"] = padded_heads
+            state["ulysses_local_heads"] = q.shape[1]
+            state["kv_collectives"] += 1
+            state["kv_gathered_bytes"] += exchanged_bytes
+        else:
+            # Safe Linear restores FP32 V, possibly >65504. Never cast BEFORE
+            # scale calculation: Inf cannot be repaired by later V scaling.
+            dtype = None if safe else {"fp16": torch.float16, "fp32": torch.float32}[state["comm_dtype"]]
+            with region("sequence_KV_all_gather"):
+                kv = gather_rows(torch.stack((k, v), dim=1), state["total"], dtype=dtype)
+                k, v = kv.unbind(1)
+            comm_dtype = str(kv.dtype if dtype is None else dtype)
+            state["kv_collectives"] += 1
+            state["kv_gathered_bytes"] += kv.numel()*(kv.element_size() if dtype is None else 2 if dtype==torch.float16 else 4)
+        state["effective_comm_dtype"] = str(k.dtype)
+    if safe and self._ps_attention.effective != "math" and not scaled_wire:
+        sq, sk = self._ps_qk_scales
+        q, k = (q.float()/sq).half(), (k.float()/sk).half()
         from .fp16_safe import power2_scale
         restore_v = power2_scale(v.float().abs().amax()/16384.)
         v = (v.float()/restore_v).half()
-        scale *= sq*sk  # ровно одна компенсация QK, до softmax
-    out = self._ps_attention(q.unsqueeze(0),k.unsqueeze(0),v.unsqueeze(0),
-        AttentionOptions(softmax_scale=scale),group=self._ps_attention_group,compute_fp16=safe)
-    if safe:out = out.float()*restore_v
-    state = getattr(self, "_ps_sequence", None)
-    if state is not None and state.get("enabled", True) and state.get("ulysses"):
-        with region("sequence_ulysses_all_to_all_out"):
-            # Обратный обмен. out: [total, h, D] — выход моего head-чанка на
-            # полной последовательности. Отправляю rank j мои строки для ЕГО
-            # tokens (chunk j padded-глобальной последовательности), получаю
-            # от каждого rank его head-чанк на МОИХ tokens; конкат по head-оси
-            # даёт [n, H, D] — полный hidden локальных tokens для out_proj.
-            world = dist.get_world_size()
-            h = state.get("ulysses_local_heads", self.heads // world)
-            total = state["total"]
-            width = (total + world - 1) // world
-            padded = torch.zeros(width * world, h, self.head_dim, dtype=out.dtype, device=out.device)
-            padded[:total] = out.squeeze(0)
-            send = padded.reshape(world, width, h, self.head_dim).contiguous()
-            recv = torch.empty_like(send)
-            dist.all_to_all_single(recv, send)
-            a, b = shard_bounds(total, dist.get_rank(), world)
-            out = torch.cat([recv[j][:b - a] for j in range(world)], dim=1)
-    self._ps_shapes = dict(q=list(q.shape),k=list(k.shape),v=list(v.shape),local_input=list(x.shape),
-                          communication_dtype=str(comm_dtype or kv.dtype) if (state and state.get("enabled") and not state.get("ulysses")) else None)
-    return self.out_proj(out.reshape(n, self.heads * self.head_dim))
+        scale *= sq*sk
+    out = self._ps_attention(q.unsqueeze(0), k.unsqueeze(0), v.unsqueeze(0),
+        AttentionOptions(softmax_scale=scale), group=self._ps_attention_group, compute_fp16=safe)
+    out = out.squeeze(0)  # BLHD dispatcher -> LHD exchange
+    if safe and not scaled_wire:
+        out = out.float()*restore_v
+    if sequence and state["ulysses"]:
+        exchanged_bytes = math.ceil(state["total"]/dist.get_world_size())*dist.get_world_size()*out.shape[1]*out.shape[2]*out.element_size()
+        with region("sequence_ulysses_output_all_to_all"):
+            out = ulysses_sequence_to_heads(out, state["total"], self.heads)
+        state["out_collectives"] += 1
+        comm_dtype = str(out.dtype)
+        state["out_exchanged_bytes"] += exchanged_bytes
+    if scaled_wire:
+        out = out.float()*restore_v
+    self._ps_shapes = dict(q=list(q.shape), k=list(k.shape), v=list(v.shape),
+                           local_input=list(x.shape), communication_dtype=comm_dtype)
+    return self.out_proj(out.reshape(n, self.heads*self.head_dim))
 
 
 def install_attention(model, config, dispatcher=None):
@@ -192,13 +195,23 @@ def install_attention(model, config, dispatcher=None):
             m.forward = types.MethodType(attention_forward, m)
 
 
-def configure_safe_qk(model, checkpoint):
+def configure_safe_qk(model, checkpoint, cached_scales=None):
     """Полные маленькие norm vectors, не полные generator weights на CPU/GPU.
 
     |RMSNorm(x)_j| <= sqrt(D)*max|weight|; split-half RoPE добавляет не более
     sqrt(2). Используем 2*sqrt(D) и запас округления half weights. Scaling
     коммутируется только через dot-product, НЕ через norm/SiLU/softmax.
     """
+    if cached_scales is not None:
+        modules={name:m for name,m in model.named_modules() if hasattr(m,"_ps_attention")}
+        if modules.keys()!=cached_scales.keys():
+            raise RuntimeError("Phase cache QK metadata names differ")
+        for name,module in modules.items():
+            scales=cached_scales[name]
+            if len(scales)!=2 or any(not math.isfinite(s) or s<=0 for s in scales):
+                raise RuntimeError("Phase cache invalid QK scales: "+name)
+            module._ps_qk_scales=tuple(scales)
+        return
     from safetensors import safe_open
     with safe_open(str(checkpoint.path),framework="pt",device="cpu") as reader:
         for name,m in model.named_modules():
@@ -221,14 +234,13 @@ def install_sequence(model, config=None):
     каждый rank получает полную последовательность ЧУЖОЙ head-группы, считает
     её точно и обратным all-to-all возвращает куски владельцам. После out-proj
     каждый rank снова держит только свои tokens. RoPE режется по tokens, как в
-    token-режиме. Требует heads % world == 0 (56 → 2/4/7/8/14/28/56);
-    иначе автоматический откат в token-режим с warning.
+    token-режиме. Нулевые heads дополняют число heads до кратного world;
+    они удаляются после обратного обмена. Финальный residual не сжимается.
     """
     import types
     from .config import DistributedConfig
     config = config or DistributedConfig()
     mode = config.sequence_mode
-    comm_dtype = {"fp16": torch.float16, "fp32": torch.float32}[config.sequence_comm_dtype]
     state = {"total": 0, "comm_dtype": config.sequence_comm_dtype}
     for index, block in enumerate(model.blocks):
         original = block.forward
@@ -238,19 +250,13 @@ def install_sequence(model, config=None):
                 raise ValueError("Подмена attention несовместима с sequence backend")
             if _i == 0:
                 state["total"] = h.shape[0]
-                state["kv_collectives"],state["kv_gathered_bytes"],state["scale_all_reduces"] = 0,0,0
-                state["requested_mode"] = mode
+                state["kv_collectives"],state["kv_gathered_bytes"],state["out_collectives"] = 0,0,0
+                state["scale_collectives"],state["out_exchanged_bytes"] = 0,0
+                state["mode"] = mode
                 world=dist.get_world_size()
-                heads = getattr(self.attn, "heads", 0)
-                ulysses_ok = mode == "ulysses" and heads and heads % world == 0
-                if mode == "ulysses" and not ulysses_ok and not state.get("warned"):
-                    import warnings
-                    warnings.warn(f"sequence_mode=ulysses требует heads % world == 0 (heads={heads}, world={world}); этот forward использует token-режим")
-                    state["warned"]=True
-                state["ulysses"] = ulysses_ok
+                state["ulysses"] = mode == "ulysses"
                 a_last,b_last=shard_bounds(state["total"],world-1,world)
                 state["enabled"]=a_last<b_last and world>1
-                state["mode"] = ("ulysses" if ulysses_ok else "token") if state["enabled"] else "fsdp2"
                 if not state["enabled"] and not state.get("warned_empty"):
                     import warnings
                     warnings.warn("Sequence split создаёт пустой rank либо world=1; этот forward использует FSDP-only на всём выбранном наборе")
@@ -276,7 +282,7 @@ def install_sequence(model, config=None):
                     local.append((l-a, r-a, row))
             result = _original(h, t_emb, local, rope[:, a:b], transformer_options=transformer_options or {})
             if _i == len(model.blocks)-1:
-                result = gather_rows(result, state["total"], dtype=comm_dtype if state.get("ulysses") else None)
+                result = gather_rows(result, state["total"])
             return result
         block.attn._ps_sequence = state
         block.forward = types.MethodType(run, block)

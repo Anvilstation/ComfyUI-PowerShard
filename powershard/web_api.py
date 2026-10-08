@@ -1,7 +1,8 @@
-"""Read-only endpoint существующего ComfyUI server. Нет новых ports/workers."""
+"""Diagnostics and pure JSON migration on the existing ComfyUI server."""
 import importlib.util
 import importlib.metadata
 import sys
+import os
 from functools import lru_cache
 from pathlib import Path
 
@@ -60,7 +61,47 @@ def provider_stamp():
                 if binary.is_file():
                     info=binary.stat();binaries.append((str(binary),info.st_size,info.st_mtime_ns))
         result.append((name,str(path),stat.st_mtime_ns if stat else None,stat.st_size if stat else None,tuple(sorted(binaries))))
+    custom=Path(os.environ.get("POWERSHARD_FLASH_ATTN_SHIM",str(Path(__file__).with_name("flash_attn_shim.py"))))
+    stat=custom.stat() if custom.is_file() else None
+    result.append(("scoped_flash_shim",str(custom),stat.st_mtime_ns if stat else None,stat.st_size if stat else None,()))
     return tuple(result)
+
+
+def runtime_status():
+    from .runtime import _SESSIONS
+    import json
+    result=[]
+    for session in list(_SESSIONS):
+        metrics=[];progress=[];idle=[]
+        for event in reversed(session.history):
+            parked=[r.get("phase_offload") for r in event.get("ranks",[]) if r.get("phase_offload")]
+            if parked and not idle:idle=parked
+            rows=[r.get("metrics") for r in event.get("ranks",[]) if r.get("metrics")]
+            if rows:
+                metrics=rows
+                break
+        if session.path is not None:
+            for rank in range(len(session.processes)):
+                path=session.report_dir/f"{session.path.name}-rank{rank}-progress.json"
+                try:progress.append(json.loads(path.read_text()))
+                except (OSError,ValueError):pass
+        result.append(dict(role=session.role,running=session.running,draining=session.draining,
+            retained=session.retains_weights,idle_on_cpu=session.idle_on_cpu,
+            requested=session.config.requested_attention,
+            selected=(session.attention_policy or {}).get("effective"),
+            placement=session.config.weight_placement,
+            idle_placement="cpu" if session.idle_on_cpu else None,
+            phase_offload=idle if session.idle_on_cpu else [],
+            gpu_ids=list(session.config.gpu_ids),
+            ranks=[dict(rank=i,memory=idle[i].get("after") if session.idle_on_cpu and i<len(idle) else m.get("memory"),attention=m.get("attention",{}).get("effective_used"),
+                        provider=m.get("attention",{}).get("provider"),
+                        weights=dict(cpu_shard_bytes=idle[i].get("cpu_shard_bytes",0),placement="cpu",gpu_shard_bytes=0,managed_shard_bytes=0)
+                            if session.idle_on_cpu and i<len(idle) else m.get("weight_memory",dict(cpu_shard_bytes=m.get("cpu_shard_bytes",0),
+                                    persistent_shard_bytes=m.get("persistent_shard_bytes",0))),
+                        prefetch=m.get("memory_plan",{}),wall_phases=m.get("wall_phases",{}),
+                        mlp_chunks=sorted(set(v.get("effective_tokens",0) for v in m.get("mlp",{}).values())))
+                   for i,m in enumerate(metrics)], progress=progress))
+    return result
 
 
 def register_routes():
@@ -70,10 +111,6 @@ def register_routes():
     if instance is None or getattr(instance,"_powershard_routes",False):return
     from aiohttp import web
     import asyncio
-    @instance.routes.get("/powershard/ui_schema")
-    async def ui_schema(request):
-        from .ui_schema import schema
-        return web.json_response(schema())
     @instance.routes.get("/powershard/devices")
     async def inventory(request):
         from .devices import visible_inventory
@@ -82,4 +119,16 @@ def register_routes():
             return web.json_response(dict(devices=devices,providers=provider_inventory()))
         except (OSError,RuntimeError,ValueError) as error:
             return web.json_response(dict(devices=[],error=str(error),providers=provider_inventory()))
+    @instance.routes.post("/powershard/migrate-workflow")
+    async def migrate_workflow(request):
+        from .workflow_migration import migrate_ui
+        try:
+            graph, changes = migrate_ui(await request.json())
+            return web.json_response(dict(graph=graph, changes=changes))
+        except (ValueError, KeyError, TypeError, IndexError) as error:
+            return web.json_response(dict(error=str(error)), status=400)
+    @instance.routes.get("/powershard/status")
+    async def status(request):
+        return web.json_response(dict(sessions=runtime_status(),
+            note="Последний завершённый RPC и текущий progress; installed/selected не доказывают фактический CUDA kernel. Triton не вызывается PowerShard."))
     instance._powershard_routes=True

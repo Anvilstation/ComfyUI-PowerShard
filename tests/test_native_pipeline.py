@@ -25,10 +25,11 @@ class CPUContractSession(Session):
 
     def start(self, cancel=None):
         if self.running:return
-        self.close()
+        self.close(keep_stage=True)
         self.path=Path(tempfile.mkdtemp(prefix="powershard-test-cpu-"))
         self.report_dir.mkdir(parents=True,exist_ok=True)
-        settings={"checkpoint":self.checkpoint,"patch":self.patch.to_dict(),"comfy_path":self.comfy_path,"role_options":self.role_options}
+        settings={"checkpoint":self.checkpoint,"patch":self.patch.to_dict(),"comfy_path":self.comfy_path,"role_options":self.role_options,
+                  "test_pause_dir":str(self._test_pause_dir) if getattr(self,"_test_pause_dir",None) else None}
         (self.path/"settings.json").write_text(json.dumps(settings))
         log=(self.report_dir/(self.path.name+".log")).open("w")
         env=os.environ.copy();env["OMP_NUM_THREADS"]="1"
@@ -43,7 +44,7 @@ class CPUContractSession(Session):
 def test_worker_patch_extra_conds_and_sampler(h3_factory,tmp_path,request,monkeypatch):
     import comfy.sample,comfy.samplers,comfy.nested_tensor,comfy.supported_models
     from powershard.comfy_adapter import RemoteH3,DiffusionProxy,PowerShardPatcher
-    from powershard.nodes import PowerShardH3FP16Patcher
+    from powershard.nodes import PowerShardH3FP16Patcher, PowerShardH3MLP
     net=h3_factory();net.condition_proj.weight.fill_(1.)
     ck=tmp_path/"tiny-h3.safetensors";save_file(net.state_dict(),str(ck))
     from powershard.comfy_adapter import load_model
@@ -59,8 +60,9 @@ def test_worker_patch_extra_conds_and_sampler(h3_factory,tmp_path,request,monkey
     mc.manual_cast_dtype=torch.float16
     host=RemoteH3(mc,device=torch.device("cpu"));host.diffusion_model=DiffusionProxy(session,net._test_config)
     source=PowerShardPatcher(host,torch.device("cpu"),torch.device("cpu"),size=1)
-    patched=PowerShardH3FP16Patcher().patch(source,True,True,True,3)[0]
-    disabled=PowerShardH3FP16Patcher().patch(patched,False,True,False)[0]
+    patched=PowerShardH3FP16Patcher().patch(source,fp16_safe=True,debug_finite=True)[0]
+    patched=PowerShardH3MLP().patch(patched,mode="manual",chunk_tokens=3)[0]
+    disabled=PowerShardH3FP16Patcher().patch(patched,fp16_safe=False,debug_finite=False)[0]
     assert source.model is not patched.model
     assert source.model.diffusion_model is not patched.model.diffusion_model
     assert source.session is not patched.session

@@ -1,0 +1,143 @@
+{
+  "version": "0.5.2",
+  "date": "2026-10-05",
+  "environment": {
+    "powershard": "0.5.2",
+    "commit": "60b94a99b7908d3d81d83641c67a5f3c24a7a8c4",
+    "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+    "architecture": "x86_64",
+    "source_sha256": "d48ddd8aa67b377e4d82bc7c02f72238febd4f3e47e3abfd0daf989d7b8a5eb8",
+    "torch": "2.12.0+cpu",
+    "torch_cuda": null
+  },
+  "comfy_sha": "f1072eb0350638a3390ddb6afbcaa8c6b237c6fd",
+  "pytest": {
+    "total": 276,
+    "passed": 260,
+    "skipped": 16,
+    "failures": [],
+    "skip_details": [
+      {
+        "test": "test_real_ulysses_collectives[3]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_real_ulysses_collectives[4]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_real_ulysses_collectives[5]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_real_ulysses_collectives[6]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[token-math-3]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[token-math-4]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[token-math-5]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[token-math-6]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[ulysses-math-3]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[ulysses-math-4]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[ulysses-math-5]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[ulysses-math-6]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[ulysses-sdpa-3]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[ulysses-sdpa-4]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[ulysses-sdpa-5]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      },
+      {
+        "test": "test_native_h3_sequence[ulysses-sdpa-6]",
+        "reason": "NOT_RUN: environment forbids Gloo TCP transport"
+      }
+    ]
+  },
+  "checks": {
+    "git_diff_whitespace": "PASS",
+    "ruff_F821_F823": "PASS",
+    "compileall": "PASS",
+    "javascript_syntax": "PASS"
+  },
+  "native_comfy_cpu": {
+    "status": "PASS",
+    "device": "CPU x86_64",
+    "sampler": "native ComfyUI Euler/simple CFG=1",
+    "steps": 2,
+    "seeds": [
+      5,
+      6,
+      5
+    ],
+    "audio_video": "PASS",
+    "clone_model_options": "PASS",
+    "seed_change_repeat": "PASS",
+    "reject_patch_before_RPC": "PASS",
+    "transport": "TEST_LOCAL_CONTRACT_ONLY",
+    "distributed_CUDA": "NOT_RUN",
+    "real_checkpoint": "NOT_RUN"
+  },
+  "new_tests": [
+    "test_mlp_disabled_at_every_new_entrypoint",
+    "test_h3_loader_keep_switch_controls_actual_session",
+    "test_native_qwen_clone_and_mlp_detach_after_load[release]",
+    "test_native_qwen_clone_and_mlp_detach_after_load[cpu_shards]",
+    "test_native_qwen_clone_and_mlp_detach_after_load[keep]",
+    "test_identical_config_reuses_owner_changed_config_does_not",
+    "test_already_cancelled_prompt_does_not_start_rpc_or_unload_weights",
+    "test_cuda_failure_does_not_keep_a_damaged_session",
+    "test_memory_pressure_retains_only_requested_cpu_shards[h3-None-True]",
+    "test_memory_pressure_retains_only_requested_cpu_shards[h3-None-False]",
+    "test_memory_pressure_retains_only_requested_cpu_shards[qwen-cpu_shards-True]",
+    "test_memory_pressure_retains_only_requested_cpu_shards[qwen-keep-True]",
+    "test_memory_pressure_retains_only_requested_cpu_shards[qwen-release-False]",
+    "test_cancel_drains_partial_rank_replies_and_preserves_inputs[1]",
+    "test_cancel_drains_partial_rank_replies_and_preserves_inputs[3]",
+    "test_release_before_vae_honors_h3_retention",
+    "test_real_cpu_worker_survives_comfy_interrupt_and_next_rpc"
+  ],
+  "hardware": {
+    "CUDA": "NOT_RUN",
+    "NCCL": "NOT_RUN",
+    "POWER9": "NOT_RUN",
+    "production_checkpoints": "NOT_RUN",
+    "ATS": "NOT_RUN",
+    "FA_kernels": "NOT_RUN",
+    "performance": "NOT_MEASURED"
+  },
+  "input_evidence": {
+    "message.txt": "0a8aedb15f2051cb0ca2fdacf387d2a19608bb95c775701a1fb130b1611e1d92",
+    "flash_attn.py": "a05c2f37e85af042507583768630df923c715fa08306301ef1f04c95a432fb0a"
+  },
+  "note": "CPU native contracts, real CPU subprocess cancellation, fake rank queues and FA reference adapters; not GPU/NCCL certification"
+}

@@ -31,7 +31,8 @@ class LocalContractSession(Session):
   self.calls=0;self.active=False
  @property
  def running(self):return self.active
- def close(self):self.active=False
+ def close(self,keep_stage=False):
+  self.active=False;super().close(keep_stage=keep_stage)
  def control(self,command):
   assert command=='end_run'
  def save_run_summary(self,context):
@@ -42,7 +43,7 @@ class LocalContractSession(Session):
  def call(self,command,args,kwargs,cancel=None):
   self.calls+=1;self.active=True
   with tempfile.TemporaryDirectory() as d:
-   write_payload(d,{'args':args,'kwargs':kwargs});v=read_payload(d)
+   write_payload(d,{'args':args,'kwargs':kwargs});v=read_payload(d,base_directory=self.stage_dir())
   if command=='preprocess_text':return net.preprocess_text_embeds(*v['args'],**v['kwargs'])
   return net(*v['args'],**v['kwargs'])
 session=LocalContractSession()

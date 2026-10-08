@@ -9,7 +9,7 @@ def inventory(n=12):
     return [dict(user_id=str(i),uuid=f'GPU-{i+100:08x}',name=f'GPU {i}',total_memory=(i+1)*2**30) for i in range(n)]
 
 
-@pytest.mark.parametrize('n',[1,2,3,4,6,12])
+@pytest.mark.parametrize('n',[1,2,3,4,5,6,12])
 def test_any_world(n):
     selected=resolve_gpu_selection(','.join(map(str,range(n))),inventory())
     assert len(selected)==n and [x['rank'] for x in selected]==list(range(n))
@@ -31,9 +31,8 @@ def test_order_all_visible_and_duplicates(monkeypatch):
 
 def test_legacy_widgets_order_and_new_optional_defaults():
     fields=PowerShardConfig.INPUT_TYPES()
-    assert list(fields['required'])==['gpu_ids','backend','precision','reserve_gib','timeout_s','allow_unverified','release_after_sampling']
-    assert list(fields['optional'])[:4]==['cpu_offload','pin_memory','prefetch_blocks','numa_policy']
-    old=PowerShardConfig().create('0,1,2','fsdp2','fp16',2.,600,False,True)[0]
+    assert list(fields['required'])==['gpu_ids','weight_placement','precision','attention_backend','sequence_mode']
+    old=PowerShardConfig().create(gpu_ids='0,1,2',precision='fp16',attention_backend='math',backend='fsdp2',timeout_s=600)[0]
     assert old.requested_attention=='math' and old.allow_fallback
     for count in (3,2,6):
         c=DistributedConfig(gpu_ids=tuple(map(str,range(count))),cpu_offload=True,attention_backend='sdpa')

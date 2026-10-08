@@ -104,5 +104,20 @@
     "downloaded": "headers only; no tensor weights",
     "native_geometry": "50 decoder layers, hidden5120, Q64/KV8, head128, vocab151936"
   },
-  "base_commit": "f4a53c8a2e17c4f01741e65ef46deffc36531071"
+  "base_commit": "f4a53c8a2e17c4f01741e65ef46deffc36531071",
+  "revision_0_5_validation": {
+    "date": "2026-10-04",
+    "ComfyUI_sha": "f1072eb0350638a3390ddb6afbcaa8c6b237c6fd",
+    "torch": "2.12.0+cpu",
+    "hardware": "x86_64 CPU; CUDA/POWER9 NOT_RUN"
+  },
+  "revision_0_5_1_validation": {
+    "date": "2026-10-04",
+    "ComfyUI_sha": "f1072eb0350638a3390ddb6afbcaa8c6b237c6fd",
+    "torch": "2.12.0+cpu",
+    "hardware": "x86_64 CPU; CUDA/POWER9 NOT_RUN",
+    "source_sha256": "63999b3cee8abcfd3e207db2da6416efb65935e148175cb66def38d0e9ceb0de",
+    "tests_passed": 239,
+    "tests_not_run": 16
+  }
 }

@@ -1,0 +1,257 @@
+{
+  "1": {
+    "class_type": "PowerShardConfig",
+    "inputs": {
+      "gpu_ids": "all",
+      "weight_placement": "gpu",
+      "precision": "fp16",
+      "attention_backend": "auto",
+      "sequence_mode": "ulysses"
+    }
+  },
+  "2": {
+    "class_type": "PowerShardConfigTuning",
+    "inputs": {
+      "config": [
+        "1",
+        0
+      ],
+      "reserve_gib": 1.5,
+      "prefetch_blocks": 0,
+      "numa_policy": "auto",
+      "strict_attention": false,
+      "allow_host_wrappers": false,
+      "pin_memory": true,
+      "sequence_comm_dtype": "fp32",
+      "prefetch_policy": "auto"
+    }
+  },
+  "3": {
+    "class_type": "PowerShardWanOptions",
+    "inputs": {
+      "fp16_safe": false,
+      "debug_finite": false,
+      "mlp_chunk_mode": "auto",
+      "mlp_chunk_tokens": 4096,
+      "moe_residency": "swap",
+      "batch_chunk": 0,
+      "model_type": "auto"
+    }
+  },
+  "5": {
+    "class_type": "PowerShardWanT5Distributed",
+    "inputs": {
+      "checkpoint": "umt5_xxl_fp16.safetensors",
+      "config": [
+        "2",
+        0
+      ],
+      "after_encode": "release"
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "5",
+        0
+      ],
+      "text": "Камера медленно облетает маяк на скалистом берегу на закате, волны разбиваются о камни, кинематографичный свет."
+    }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "5",
+        0
+      ],
+      "text": "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走"
+    }
+  },
+  "4": {
+    "class_type": "PowerShardWan22MoELoader",
+    "inputs": {
+      "high_noise_checkpoint": "wan2.2_i2v_high_noise_14B_fp16.safetensors",
+      "low_noise_checkpoint": "wan2.2_i2v_low_noise_14B_fp16.safetensors",
+      "config": [
+        "2",
+        0
+      ],
+      "boundary": 0.9,
+      "keep_in_memory": true,
+      "options": [
+        "3",
+        0
+      ]
+    }
+  },
+  "8": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "wan_2.1_vae.safetensors"
+    }
+  },
+  "10": {
+    "class_type": "ModelSamplingSD3",
+    "inputs": {
+      "model": [
+        "4",
+        0
+      ],
+      "shift": 8.0
+    }
+  },
+  "11": {
+    "class_type": "ModelSamplingSD3",
+    "inputs": {
+      "model": [
+        "4",
+        1
+      ],
+      "shift": 8.0
+    }
+  },
+  "9": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "example.png"
+    }
+  },
+  "12": {
+    "class_type": "WanImageToVideo",
+    "inputs": {
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "vae": [
+        "8",
+        0
+      ],
+      "start_image": [
+        "9",
+        0
+      ],
+      "width": 832,
+      "height": 480,
+      "length": 81,
+      "batch_size": 1
+    }
+  },
+  "13": {
+    "class_type": "KSamplerAdvanced",
+    "inputs": {
+      "model": [
+        "10",
+        0
+      ],
+      "positive": [
+        "12",
+        0
+      ],
+      "negative": [
+        "12",
+        1
+      ],
+      "latent_image": [
+        "12",
+        2
+      ],
+      "add_noise": "enable",
+      "noise_seed": 42,
+      "steps": 20,
+      "cfg": 3.5,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "start_at_step": 0,
+      "end_at_step": 10,
+      "return_with_leftover_noise": "enable"
+    }
+  },
+  "14": {
+    "class_type": "KSamplerAdvanced",
+    "inputs": {
+      "model": [
+        "11",
+        0
+      ],
+      "positive": [
+        "12",
+        0
+      ],
+      "negative": [
+        "12",
+        1
+      ],
+      "latent_image": [
+        "13",
+        0
+      ],
+      "add_noise": "disable",
+      "noise_seed": 42,
+      "steps": 20,
+      "cfg": 3.5,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "start_at_step": 10,
+      "end_at_step": 10000,
+      "return_with_leftover_noise": "disable"
+    }
+  },
+  "20": {
+    "class_type": "PowerShardRelease",
+    "inputs": {
+      "samples": [
+        "14",
+        0
+      ],
+      "preserve_qwen_cpu_shards": true,
+      "clear_conditioning_cache": false,
+      "preserve_h3_cpu_shards": true
+    }
+  },
+  "21": {
+    "class_type": "VAEDecodeTiled",
+    "inputs": {
+      "samples": [
+        "20",
+        0
+      ],
+      "vae": [
+        "8",
+        0
+      ],
+      "tile_size": 512,
+      "overlap": 64,
+      "temporal_size": 64,
+      "temporal_overlap": 8
+    }
+  },
+  "22": {
+    "class_type": "CreateVideo",
+    "inputs": {
+      "images": [
+        "21",
+        0
+      ],
+      "fps": 16.0
+    }
+  },
+  "23": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "video": [
+        "22",
+        0
+      ],
+      "filename_prefix": "video/wan22_i2v_a14b_480p",
+      "format": "auto",
+      "codec": "auto"
+    }
+  }
+}

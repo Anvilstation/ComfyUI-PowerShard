@@ -1,0 +1,1115 @@
+{
+  "uploaded_archive_sha256": "6c8e1e0622bf901bac1efa506b50d30d8c9cd626ab95ca3b3141bd273ff995db",
+  "note": "Uploaded measurements, unchanged inputs. Cancelled RPC timing is UNKNOWN; next-step budget is arithmetic replay, not GPU benchmark.",
+  "sessions": [
+    {
+      "session": "powershard-40lc4jmz",
+      "source_sha256": "9df8ec662e795b4672787cb5262b10caf002ead86467fe22416c9c0f37f1fb02",
+      "role": "h3",
+      "worker_pids": [
+        21134,
+        21139,
+        21144,
+        21149
+      ],
+      "gpu_ids": [
+        "0",
+        "1",
+        "2",
+        "3"
+      ],
+      "placement": "cpu",
+      "cpu_offload": true,
+      "sequence_mode": "ulysses",
+      "comm_dtype": "fp16",
+      "patch": {
+        "enabled": true,
+        "fp16_safe": true,
+        "debug_finite": false,
+        "mlp_chunk_tokens": 16384,
+        "mlp_chunk_mode": "off"
+      },
+      "requested_attention": "flash_attn",
+      "selected_attention": "sdpa",
+      "load_s": 85.18497098900002,
+      "local_shard_bytes": 10078230016,
+      "shard_devices": [
+        "cpu"
+      ],
+      "import_failures": {
+        "flash_attn": "ModuleNotFoundError: No module named 'flash_attn_2_cuda'",
+        "sdpa": null
+      },
+      "rpc": [
+        {
+          "sequence": 1,
+          "command": "preprocess_text",
+          "forward_s": 5.540150826000172,
+          "ipc_and_forward_s": 5.972872829999915,
+          "memory": {
+            "device": "cuda:0",
+            "allocated": 257654784,
+            "reserved": 526385152,
+            "peak_allocated": 4593339392,
+            "peak_reserved": 6463422464,
+            "free": 15325331456,
+            "total": 16911433728
+          },
+          "weight_memory": {
+            "persistent_shard_bytes": 10078230016,
+            "cpu_shard_bytes": 10078230016,
+            "gpu_shard_bytes": 0,
+            "replicated_buffer_bytes": 32864,
+            "largest_unsharded_group_bytes": 774209024,
+            "prefetch_blocks": 0,
+            "active_plus_prefetch_parameter_bound_bytes": 774219776,
+            "bound_excludes": "copy/communication buffers, temporary FP32 casts and dequant; inspect CUDA peak/trace",
+            "activation_workspace_bytes": "NOT_SEPARATELY_ATTRIBUTED; included in CUDA allocated/peak"
+          },
+          "plan": {
+            "policy": "auto",
+            "free_at_boundary": 15597961216,
+            "reserve_bytes": 0,
+            "activation_estimate_bytes": 1147087872,
+            "communication_estimate_bytes": 0,
+            "active_group_estimate_bytes": 774209024,
+            "requested_prefetch": 0,
+            "effective_prefetch": 0,
+            "mlp_budget_bytes": 13676664320,
+            "unknown": "allocator fragmentation, kernel workspace, external allocations; no OOM admission gate",
+            "estimated_global_tokens": 5927,
+            "estimated_local_tokens": 5927
+          },
+          "first_mlp": {
+            "mode": "off",
+            "requested_tokens": 16384,
+            "effective_tokens": 5927,
+            "local_tokens": 5927,
+            "chunks": 1,
+            "workspace_bytes_per_token": 293904,
+            "estimated_chunk_workspace_bytes": 1741969008,
+            "budget_bytes": 13676664320,
+            "prepared_weight_bytes": 0,
+            "reason": "off: полный локальный MLP; FP16 Safe сохранён",
+            "estimate_not_measurement": true,
+            "preparation_peak_estimate": 0,
+            "preparation": "per-call tiles; preparation budget insufficient or one chunk"
+          },
+          "actual_calls": {
+            "token_refiner:sdpa": 2
+          },
+          "semantic_fallbacks": {},
+          "global_tokens": null,
+          "sequence_communication": null
+        },
+        {
+          "sequence": 1,
+          "command": "preprocess_text",
+          "forward_s": 5.685762401999909,
+          "ipc_and_forward_s": 6.1072628980000445,
+          "memory": {
+            "device": "cuda:0",
+            "allocated": 257654784,
+            "reserved": 526385152,
+            "peak_allocated": 4593339392,
+            "peak_reserved": 6463422464,
+            "free": 15203696640,
+            "total": 16911433728
+          },
+          "weight_memory": {
+            "persistent_shard_bytes": 10078230016,
+            "cpu_shard_bytes": 10078230016,
+            "gpu_shard_bytes": 0,
+            "replicated_buffer_bytes": 32864,
+            "largest_unsharded_group_bytes": 774209024,
+            "prefetch_blocks": 0,
+            "active_plus_prefetch_parameter_bound_bytes": 774219776,
+            "bound_excludes": "copy/communication buffers, temporary FP32 casts and dequant; inspect CUDA peak/trace",
+            "activation_workspace_bytes": "NOT_SEPARATELY_ATTRIBUTED; included in CUDA allocated/peak"
+          },
+          "plan": {
+            "policy": "auto",
+            "free_at_boundary": 15476326400,
+            "reserve_bytes": 0,
+            "activation_estimate_bytes": 1147087872,
+            "communication_estimate_bytes": 0,
+            "active_group_estimate_bytes": 774209024,
+            "requested_prefetch": 0,
+            "effective_prefetch": 0,
+            "mlp_budget_bytes": 13555029504,
+            "unknown": "allocator fragmentation, kernel workspace, external allocations; no OOM admission gate",
+            "estimated_global_tokens": 5927,
+            "estimated_local_tokens": 5927
+          },
+          "first_mlp": {
+            "mode": "off",
+            "requested_tokens": 16384,
+            "effective_tokens": 5927,
+            "local_tokens": 5927,
+            "chunks": 1,
+            "workspace_bytes_per_token": 293904,
+            "estimated_chunk_workspace_bytes": 1741969008,
+            "budget_bytes": 13555029504,
+            "prepared_weight_bytes": 0,
+            "reason": "off: полный локальный MLP; FP16 Safe сохранён",
+            "estimate_not_measurement": true,
+            "preparation_peak_estimate": 0,
+            "preparation": "per-call tiles; preparation budget insufficient or one chunk"
+          },
+          "actual_calls": {
+            "token_refiner:sdpa": 2
+          },
+          "semantic_fallbacks": {},
+          "global_tokens": null,
+          "sequence_communication": null
+        }
+      ]
+    },
+    {
+      "session": "powershard-89zaurbs",
+      "source_sha256": "018f7b95578e14b8d5be5e841805278619c53d52b29c2093bb909e15d9b4ba7a",
+      "role": "h3",
+      "worker_pids": [
+        19381,
+        19383,
+        19385,
+        19387,
+        19389
+      ],
+      "gpu_ids": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "5"
+      ],
+      "placement": "cpu",
+      "cpu_offload": true,
+      "sequence_mode": "token",
+      "comm_dtype": "fp32",
+      "patch": {
+        "enabled": true,
+        "fp16_safe": true,
+        "debug_finite": true,
+        "mlp_chunk_tokens": 4096,
+        "mlp_chunk_mode": "auto"
+      },
+      "requested_attention": "sdpa",
+      "selected_attention": "sdpa",
+      "load_s": 14.154966037000122,
+      "local_shard_bytes": 8064860144,
+      "shard_devices": [
+        "cpu"
+      ],
+      "import_failures": {
+        "sdpa": null
+      },
+      "rpc": [
+        {
+          "sequence": 1,
+          "command": "preprocess_text",
+          "forward_s": 7.069713997000008,
+          "ipc_and_forward_s": 7.568589026999916,
+          "memory": {
+            "device": "cuda:0",
+            "allocated": 257655296,
+            "reserved": 6444548096,
+            "peak_allocated": 4628819456,
+            "peak_reserved": 6444548096,
+            "free": 9014476800,
+            "total": 16911433728
+          },
+          "weight_memory": {
+            "persistent_shard_bytes": 8064860144,
+            "cpu_shard_bytes": 8064860144,
+            "gpu_shard_bytes": 0,
+            "managed_shard_bytes": 0,
+            "placement": "cpu",
+            "ats": null,
+            "replicated_buffer_bytes": 32864,
+            "largest_unsharded_group_bytes": 774209024,
+            "prefetch_blocks": 0,
+            "active_plus_prefetch_parameter_bound_bytes": 774219776,
+            "bound_excludes": "copy/communication buffers, temporary FP32 casts and dequant; inspect CUDA peak/trace",
+            "activation_workspace_bytes": "NOT_SEPARATELY_ATTRIBUTED; included in CUDA allocated/peak"
+          },
+          "plan": {
+            "policy": "auto",
+            "free_at_boundary": 15205269504,
+            "reserve_bytes": 0,
+            "activation_estimate_bytes": 1147087872,
+            "communication_estimate_bytes": 0,
+            "active_group_estimate_bytes": 774209024,
+            "requested_prefetch": 0,
+            "effective_prefetch": 0,
+            "mlp_budget_bytes": 13283972608,
+            "unknown": "allocator fragmentation, kernel workspace, external allocations; no OOM admission gate",
+            "estimated_global_tokens": 5927,
+            "estimated_local_tokens": 5927
+          },
+          "first_mlp": {
+            "mode": "auto",
+            "requested_tokens": 4096,
+            "effective_tokens": 5888,
+            "local_tokens": 5927,
+            "chunks": 2,
+            "workspace_bytes_per_token": 293904,
+            "estimated_chunk_workspace_bytes": 1730506752,
+            "budget_bytes": 13156518400,
+            "prepared_weight_bytes": 462422016,
+            "reason": "auto: локальные tokens, FP32 workspace, reserve, активные веса/prefetch",
+            "estimate_not_measurement": true,
+            "full_output_bytes": 127454208,
+            "preparation_peak_estimate": 2928672768,
+            "preparation": "active MLP, reused across token chunks"
+          },
+          "actual_calls": {
+            "token_refiner:sdpa": 2
+          },
+          "semantic_fallbacks": {},
+          "global_tokens": null,
+          "sequence_communication": null
+        },
+        {
+          "sequence": 2,
+          "command": "forward",
+          "forward_s": 45.17009905099985,
+          "ipc_and_forward_s": 45.3251401,
+          "memory": {
+            "device": "cuda:0",
+            "allocated": 294539776,
+            "reserved": 10869538816,
+            "peak_allocated": 9656077824,
+            "peak_reserved": 10869538816,
+            "free": 4336058368,
+            "total": 16911433728
+          },
+          "weight_memory": {
+            "persistent_shard_bytes": 8064860144,
+            "cpu_shard_bytes": 8064860144,
+            "gpu_shard_bytes": 0,
+            "managed_shard_bytes": 0,
+            "placement": "cpu",
+            "ats": null,
+            "replicated_buffer_bytes": 32864,
+            "largest_unsharded_group_bytes": 774209024,
+            "prefetch_blocks": 0,
+            "active_plus_prefetch_parameter_bound_bytes": 774219776,
+            "bound_excludes": "copy/communication buffers, temporary FP32 casts and dequant; inspect CUDA peak/trace",
+            "activation_workspace_bytes": "NOT_SEPARATELY_ATTRIBUTED; included in CUDA allocated/peak"
+          },
+          "plan": {
+            "policy": "auto",
+            "free_at_boundary": 8760459264,
+            "reserve_bytes": 0,
+            "activation_estimate_bytes": 2258307072,
+            "communication_estimate_bytes": 3441328128,
+            "active_group_estimate_bytes": 774209024,
+            "requested_prefetch": 0,
+            "effective_prefetch": 0,
+            "mlp_budget_bytes": 2286615040,
+            "unknown": "allocator fragmentation, kernel workspace, external allocations; no OOM admission gate",
+            "conditioning_tokens": "UNKNOWN reference/keyframe expansion; token estimate is a lower bound",
+            "estimated_global_tokens": 25004,
+            "estimated_local_tokens": 5001
+          },
+          "first_mlp": {
+            "mode": "auto",
+            "requested_tokens": 4096,
+            "effective_tokens": 6912,
+            "local_tokens": 9307,
+            "chunks": 2,
+            "workspace_bytes_per_token": 293904,
+            "estimated_chunk_workspace_bytes": 2031464448,
+            "budget_bytes": 2086477312,
+            "prepared_weight_bytes": 0,
+            "reason": "auto: локальные tokens, FP32 workspace, reserve, активные веса/prefetch",
+            "estimate_not_measurement": true,
+            "full_output_bytes": 200137728,
+            "preparation_peak_estimate": 0,
+            "preparation": "per-call tiles; preparation budget insufficient or one chunk"
+          },
+          "actual_calls": {
+            "token_refiner:sdpa": 2,
+            "dit:sdpa": 50
+          },
+          "semantic_fallbacks": {},
+          "global_tokens": 46535,
+          "sequence_communication": {
+            "kv_all_gathers": 50,
+            "qkv_all_to_all": 0,
+            "gathered_bytes": 133425152000,
+            "final_hidden_all_gathers": 1,
+            "mode": "token",
+            "output_all_to_all": 0,
+            "note": "Logical tensor bytes, not measured NCCL link traffic; Ulysses: fused QKV + output all-to-all"
+          },
+          "next_step_arithmetic_replay": {
+            "not_a_measured_cancelled_rpc": true,
+            "old_plan_budget_bytes": 0,
+            "reusable_cache_bytes": 10574999040,
+            "old_mlp_workspace_after_full_output": 0,
+            "old_mlp_effective_tokens": 1,
+            "new_boundary_budget_bytes": 8437213184
+          },
+          "all_rank_cpu_shards_bytes": 40312920064
+        }
+      ]
+    },
+    {
+      "session": "powershard-9liuhinq",
+      "source_sha256": "c212d13340ba247efbe31bfb288d860c554d174de36406e617f3f73ea19bde5e",
+      "role": "qwen",
+      "worker_pids": [
+        8961,
+        8963,
+        8965,
+        8967,
+        8969
+      ],
+      "gpu_ids": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "5"
+      ],
+      "placement": "gpu",
+      "cpu_offload": false,
+      "sequence_mode": "token",
+      "comm_dtype": "fp32",
+      "patch": {
+        "enabled": false,
+        "fp16_safe": true,
+        "debug_finite": false,
+        "mlp_chunk_tokens": 512,
+        "mlp_chunk_mode": "manual"
+      },
+      "requested_attention": "auto",
+      "selected_attention": "vllm_flash_attn",
+      "load_s": 63.48006466200002,
+      "local_shard_bytes": 5310794432,
+      "shard_devices": [
+        "cuda:0"
+      ],
+      "import_failures": {
+        "vllm_flash_attn": null
+      },
+      "rpc": [
+        {
+          "sequence": 1,
+          "command": "encode",
+          "forward_s": 34.096861289,
+          "ipc_and_forward_s": 34.24335415300004,
+          "memory": {
+            "device": "cuda:0",
+            "allocated": 5420002304,
+            "reserved": 9950986240,
+            "peak_allocated": 8791548928,
+            "peak_reserved": 9950986240,
+            "free": 6009913344,
+            "total": 16911433728
+          },
+          "weight_memory": null,
+          "plan": {
+            "policy": "auto",
+            "free_at_boundary": 10441064448,
+            "reserve_bytes": 2147483648,
+            "activation_estimate_bytes": 102604800,
+            "communication_estimate_bytes": 34201600,
+            "active_group_estimate_bytes": 1555824640,
+            "requested_prefetch": 0,
+            "effective_prefetch": 0,
+            "mlp_budget_bytes": 6540132352,
+            "unknown": "allocator fragmentation, kernel workspace, external allocations; no OOM admission gate",
+            "vision_expansion_estimate": "UNKNOWN before native processor; estimate is a lower bound"
+          },
+          "first_mlp": {
+            "mode": "auto",
+            "requested_tokens": 4096,
+            "effective_tokens": 1024,
+            "local_tokens": 1186,
+            "chunks": 2,
+            "workspace_bytes_per_token": 471056,
+            "estimated_chunk_workspace_bytes": 482361344,
+            "budget_bytes": 6515843072,
+            "prepared_weight_bytes": 786432000,
+            "reason": "auto: локальные tokens, FP32 workspace, reserve, активные веса/prefetch",
+            "estimate_not_measurement": true,
+            "full_output_bytes": 24289280,
+            "preparation_peak_estimate": 891289600,
+            "preparation": "active MLP, reused across token chunks"
+          },
+          "actual_calls": {
+            "qwen_vision:sdpa": 270,
+            "qwen_text:sdpa": 50
+          },
+          "semantic_fallbacks": {
+            "dtype/head_dim вне области CUDA probe этой session": "sdpa",
+            "Flash API не принимает произвольный mask": "sdpa"
+          },
+          "global_tokens": null,
+          "sequence_communication": {
+            "kv_all_gathers": 50,
+            "hidden_all_gathers": 50
+          }
+        }
+      ]
+    },
+    {
+      "session": "powershard-fkbxjovb",
+      "source_sha256": "35256926444c59e37265a9467d355e70cfdd45a89d5a120b9e994820b3d3b8b6",
+      "role": "h3",
+      "worker_pids": [
+        11357,
+        11359,
+        11361,
+        11363,
+        11365
+      ],
+      "gpu_ids": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "5"
+      ],
+      "placement": "cpu",
+      "cpu_offload": true,
+      "sequence_mode": "ulysses",
+      "comm_dtype": "fp32",
+      "patch": {
+        "enabled": true,
+        "fp16_safe": true,
+        "debug_finite": true,
+        "mlp_chunk_tokens": 4096,
+        "mlp_chunk_mode": "auto"
+      },
+      "requested_attention": "auto",
+      "selected_attention": "vllm_flash_attn",
+      "load_s": 82.17183059499996,
+      "local_shard_bytes": 8064860144,
+      "shard_devices": [
+        "cpu"
+      ],
+      "import_failures": {
+        "vllm_flash_attn": null
+      },
+      "rpc": [
+        {
+          "sequence": 1,
+          "command": "preprocess_text",
+          "forward_s": 6.9713832789999515,
+          "ipc_and_forward_s": 7.485994461000018,
+          "memory": {
+            "device": "cuda:0",
+            "allocated": 257655296,
+            "reserved": 6444548096,
+            "peak_allocated": 4628819456,
+            "peak_reserved": 6444548096,
+            "free": 9413459968,
+            "total": 16911433728
+          },
+          "weight_memory": {
+            "persistent_shard_bytes": 8064860144,
+            "cpu_shard_bytes": 8064860144,
+            "gpu_shard_bytes": 0,
+            "managed_shard_bytes": 0,
+            "placement": "cpu",
+            "ats": null,
+            "replicated_buffer_bytes": 32864,
+            "largest_unsharded_group_bytes": 774209024,
+            "prefetch_blocks": 0,
+            "active_plus_prefetch_parameter_bound_bytes": 774219776,
+            "bound_excludes": "copy/communication buffers, temporary FP32 casts and dequant; inspect CUDA peak/trace",
+            "activation_workspace_bytes": "NOT_SEPARATELY_ATTRIBUTED; included in CUDA allocated/peak"
+          },
+          "plan": {
+            "policy": "auto",
+            "free_at_boundary": 15604252672,
+            "reserve_bytes": 0,
+            "activation_estimate_bytes": 1147087872,
+            "communication_estimate_bytes": 0,
+            "active_group_estimate_bytes": 774209024,
+            "requested_prefetch": 0,
+            "effective_prefetch": 0,
+            "mlp_budget_bytes": 13682955776,
+            "unknown": "allocator fragmentation, kernel workspace, external allocations; no OOM admission gate",
+            "estimated_global_tokens": 5927,
+            "estimated_local_tokens": 5927
+          },
+          "first_mlp": {
+            "mode": "auto",
+            "requested_tokens": 4096,
+            "effective_tokens": 5888,
+            "local_tokens": 5927,
+            "chunks": 2,
+            "workspace_bytes_per_token": 293904,
+            "estimated_chunk_workspace_bytes": 1730506752,
+            "budget_bytes": 13555501568,
+            "prepared_weight_bytes": 462422016,
+            "reason": "auto: локальные tokens, FP32 workspace, reserve, активные веса/prefetch",
+            "estimate_not_measurement": true,
+            "full_output_bytes": 127454208,
+            "preparation_peak_estimate": 2928672768,
+            "preparation": "active MLP, reused across token chunks"
+          },
+          "actual_calls": {
+            "token_refiner:vllm_flash_attn": 2
+          },
+          "semantic_fallbacks": {},
+          "global_tokens": null,
+          "sequence_communication": null
+        },
+        {
+          "sequence": 2,
+          "command": "forward",
+          "forward_s": 51.98918929700005,
+          "ipc_and_forward_s": 52.12266526500002,
+          "memory": {
+            "device": "cuda:0",
+            "allocated": 294539776,
+            "reserved": 10536091648,
+            "peak_allocated": 8950830080,
+            "peak_reserved": 10536091648,
+            "free": 5019795456,
+            "total": 16911433728
+          },
+          "weight_memory": {
+            "persistent_shard_bytes": 8064860144,
+            "cpu_shard_bytes": 8064860144,
+            "gpu_shard_bytes": 0,
+            "managed_shard_bytes": 0,
+            "placement": "cpu",
+            "ats": null,
+            "replicated_buffer_bytes": 32864,
+            "largest_unsharded_group_bytes": 774209024,
+            "prefetch_blocks": 0,
+            "active_plus_prefetch_parameter_bound_bytes": 774219776,
+            "bound_excludes": "copy/communication buffers, temporary FP32 casts and dequant; inspect CUDA peak/trace",
+            "activation_workspace_bytes": "NOT_SEPARATELY_ATTRIBUTED; included in CUDA allocated/peak"
+          },
+          "plan": {
+            "policy": "auto",
+            "free_at_boundary": 9159442432,
+            "reserve_bytes": 0,
+            "activation_estimate_bytes": 2258307072,
+            "communication_estimate_bytes": 1843568640,
+            "active_group_estimate_bytes": 774209024,
+            "requested_prefetch": 0,
+            "effective_prefetch": 0,
+            "mlp_budget_bytes": 4283357696,
+            "unknown": "allocator fragmentation, kernel workspace, external allocations; no OOM admission gate",
+            "conditioning_tokens": "UNKNOWN reference/keyframe expansion; token estimate is a lower bound",
+            "estimated_global_tokens": 25004,
+            "estimated_local_tokens": 5001
+          },
+          "first_mlp": {
+            "mode": "auto",
+            "requested_tokens": 4096,
+            "effective_tokens": 9216,
+            "local_tokens": 9307,
+            "chunks": 2,
+            "workspace_bytes_per_token": 293904,
+            "estimated_chunk_workspace_bytes": 2708619264,
+            "budget_bytes": 4083219968,
+            "prepared_weight_bytes": 0,
+            "reason": "auto: локальные tokens, FP32 workspace, reserve, активные веса/prefetch",
+            "estimate_not_measurement": true,
+            "full_output_bytes": 200137728,
+            "preparation_peak_estimate": 0,
+            "preparation": "per-call tiles; preparation budget insufficient or one chunk"
+          },
+          "actual_calls": {
+            "token_refiner:vllm_flash_attn": 2,
+            "dit:vllm_flash_attn": 50
+          },
+          "semantic_fallbacks": {},
+          "global_tokens": 46535,
+          "sequence_communication": {
+            "kv_all_gathers": 0,
+            "qkv_all_to_all": 50,
+            "gathered_bytes": 42886656000,
+            "final_hidden_all_gathers": 1,
+            "mode": "ulysses",
+            "output_all_to_all": 50,
+            "note": "Logical tensor bytes, not measured NCCL link traffic; Ulysses: fused QKV + output all-to-all"
+          },
+          "next_step_arithmetic_replay": {
+            "not_a_measured_cancelled_rpc": true,
+            "old_plan_budget_bytes": 143710720,
+            "reusable_cache_bytes": 10241551872,
+            "old_mlp_workspace_after_full_output": 0,
+            "old_mlp_effective_tokens": 1,
+            "new_boundary_budget_bytes": 10385262592
+          },
+          "all_rank_cpu_shards_bytes": 40312920064
+        }
+      ]
+    },
+    {
+      "session": "powershard-hvjcdv7x",
+      "source_sha256": "0396cdb7ca3c4555fc3b465eb5a69277767d9dfde2e8306de85dec2ee2714c86",
+      "role": "h3",
+      "worker_pids": [
+        14444,
+        14446,
+        14448,
+        14450,
+        14452
+      ],
+      "gpu_ids": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "5"
+      ],
+      "placement": "cpu",
+      "cpu_offload": true,
+      "sequence_mode": "token",
+      "comm_dtype": "fp32",
+      "patch": {
+        "enabled": true,
+        "fp16_safe": true,
+        "debug_finite": true,
+        "mlp_chunk_tokens": 4096,
+        "mlp_chunk_mode": "auto"
+      },
+      "requested_attention": "flash_attn",
+      "selected_attention": "sdpa",
+      "load_s": 12.875495813000043,
+      "local_shard_bytes": 8064860144,
+      "shard_devices": [
+        "cpu"
+      ],
+      "import_failures": {
+        "flash_attn": "ModuleNotFoundError: No module named 'flash_attn_2_cuda'",
+        "sdpa": null
+      },
+      "rpc": [
+        {
+          "sequence": 1,
+          "command": "preprocess_text",
+          "forward_s": 7.002810352000097,
+          "ipc_and_forward_s": 7.502926175999846,
+          "memory": {
+            "device": "cuda:0",
+            "allocated": 257655296,
+            "reserved": 6444548096,
+            "peak_allocated": 4628819456,
+            "peak_reserved": 6444548096,
+            "free": 9287630848,
+            "total": 16911433728
+          },
+          "weight_memory": {
+            "persistent_shard_bytes": 8064860144,
+            "cpu_shard_bytes": 8064860144,
+            "gpu_shard_bytes": 0,
+            "managed_shard_bytes": 0,
+            "placement": "cpu",
+            "ats": null,
+            "replicated_buffer_bytes": 32864,
+            "largest_unsharded_group_bytes": 774209024,
+            "prefetch_blocks": 0,
+            "active_plus_prefetch_parameter_bound_bytes": 774219776,
+            "bound_excludes": "copy/communication buffers, temporary FP32 casts and dequant; inspect CUDA peak/trace",
+            "activation_workspace_bytes": "NOT_SEPARATELY_ATTRIBUTED; included in CUDA allocated/peak"
+          },
+          "plan": {
+            "policy": "auto",
+            "free_at_boundary": 15478423552,
+            "reserve_bytes": 0,
+            "activation_estimate_bytes": 1147087872,
+            "communication_estimate_bytes": 0,
+            "active_group_estimate_bytes": 774209024,
+            "requested_prefetch": 0,
+            "effective_prefetch": 0,
+            "mlp_budget_bytes": 13557126656,
+            "unknown": "allocator fragmentation, kernel workspace, external allocations; no OOM admission gate",
+            "estimated_global_tokens": 5927,
+            "estimated_local_tokens": 5927
+          },
+          "first_mlp": {
+            "mode": "auto",
+            "requested_tokens": 4096,
+            "effective_tokens": 5888,
+            "local_tokens": 5927,
+            "chunks": 2,
+            "workspace_bytes_per_token": 293904,
+            "estimated_chunk_workspace_bytes": 1730506752,
+            "budget_bytes": 13429672448,
+            "prepared_weight_bytes": 462422016,
+            "reason": "auto: локальные tokens, FP32 workspace, reserve, активные веса/prefetch",
+            "estimate_not_measurement": true,
+            "full_output_bytes": 127454208,
+            "preparation_peak_estimate": 2928672768,
+            "preparation": "active MLP, reused across token chunks"
+          },
+          "actual_calls": {
+            "token_refiner:sdpa": 2
+          },
+          "semantic_fallbacks": {},
+          "global_tokens": null,
+          "sequence_communication": null
+        },
+        {
+          "sequence": 2,
+          "command": "forward",
+          "forward_s": 45.348289901000044,
+          "ipc_and_forward_s": 45.519988769000065,
+          "memory": {
+            "device": "cuda:0",
+            "allocated": 294539776,
+            "reserved": 10869538816,
+            "peak_allocated": 9656077824,
+            "peak_reserved": 10869538816,
+            "free": 4588240896,
+            "total": 16911433728
+          },
+          "weight_memory": {
+            "persistent_shard_bytes": 8064860144,
+            "cpu_shard_bytes": 8064860144,
+            "gpu_shard_bytes": 0,
+            "managed_shard_bytes": 0,
+            "placement": "cpu",
+            "ats": null,
+            "replicated_buffer_bytes": 32864,
+            "largest_unsharded_group_bytes": 774209024,
+            "prefetch_blocks": 0,
+            "active_plus_prefetch_parameter_bound_bytes": 774219776,
+            "bound_excludes": "copy/communication buffers, temporary FP32 casts and dequant; inspect CUDA peak/trace",
+            "activation_workspace_bytes": "NOT_SEPARATELY_ATTRIBUTED; included in CUDA allocated/peak"
+          },
+          "plan": {
+            "policy": "auto",
+            "free_at_boundary": 9011462144,
+            "reserve_bytes": 0,
+            "activation_estimate_bytes": 2258307072,
+            "communication_estimate_bytes": 3441328128,
+            "active_group_estimate_bytes": 774209024,
+            "requested_prefetch": 0,
+            "effective_prefetch": 0,
+            "mlp_budget_bytes": 2537617920,
+            "unknown": "allocator fragmentation, kernel workspace, external allocations; no OOM admission gate",
+            "conditioning_tokens": "UNKNOWN reference/keyframe expansion; token estimate is a lower bound",
+            "estimated_global_tokens": 25004,
+            "estimated_local_tokens": 5001
+          },
+          "first_mlp": {
+            "mode": "auto",
+            "requested_tokens": 4096,
+            "effective_tokens": 7936,
+            "local_tokens": 9307,
+            "chunks": 2,
+            "workspace_bytes_per_token": 293904,
+            "estimated_chunk_workspace_bytes": 2332422144,
+            "budget_bytes": 2337480192,
+            "prepared_weight_bytes": 0,
+            "reason": "auto: локальные tokens, FP32 workspace, reserve, активные веса/prefetch",
+            "estimate_not_measurement": true,
+            "full_output_bytes": 200137728,
+            "preparation_peak_estimate": 0,
+            "preparation": "per-call tiles; preparation budget insufficient or one chunk"
+          },
+          "actual_calls": {
+            "token_refiner:sdpa": 2,
+            "dit:sdpa": 50
+          },
+          "semantic_fallbacks": {},
+          "global_tokens": 46535,
+          "sequence_communication": {
+            "kv_all_gathers": 50,
+            "qkv_all_to_all": 0,
+            "gathered_bytes": 133425152000,
+            "final_hidden_all_gathers": 1,
+            "mode": "token",
+            "output_all_to_all": 0,
+            "note": "Logical tensor bytes, not measured NCCL link traffic; Ulysses: fused QKV + output all-to-all"
+          },
+          "next_step_arithmetic_replay": {
+            "not_a_measured_cancelled_rpc": true,
+            "old_plan_budget_bytes": 0,
+            "reusable_cache_bytes": 10574999040,
+            "old_mlp_workspace_after_full_output": 0,
+            "old_mlp_effective_tokens": 1,
+            "new_boundary_budget_bytes": 8689395712
+          },
+          "all_rank_cpu_shards_bytes": 40312920064
+        }
+      ]
+    },
+    {
+      "session": "powershard-wqop66l2",
+      "source_sha256": "27fa2be1dff7856356784c5595b0a1248e1b45210f75f21a7ae4da8b16121f29",
+      "role": "qwen",
+      "worker_pids": [
+        11121,
+        11123,
+        11125,
+        11127,
+        11129
+      ],
+      "gpu_ids": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "5"
+      ],
+      "placement": "ats",
+      "cpu_offload": true,
+      "sequence_mode": "ulysses",
+      "comm_dtype": "fp16",
+      "patch": {
+        "enabled": false,
+        "fp16_safe": true,
+        "debug_finite": false,
+        "mlp_chunk_tokens": 512,
+        "mlp_chunk_mode": "manual"
+      },
+      "requested_attention": "vllm_flash_attn",
+      "selected_attention": "vllm_flash_attn",
+      "load_s": 56.15643535799995,
+      "local_shard_bytes": 5310794432,
+      "shard_devices": [
+        "cpu"
+      ],
+      "import_failures": {
+        "vllm_flash_attn": null
+      },
+      "rpc": []
+    },
+    {
+      "session": "powershard-x7pplm61",
+      "source_sha256": "b3ff5c4ef7eff42ef26266c098a999ead9b37ad5e48fdc962cd5f518d253075d",
+      "role": "qwen",
+      "worker_pids": [
+        14809,
+        14811,
+        14813,
+        14815,
+        14817
+      ],
+      "gpu_ids": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "5"
+      ],
+      "placement": "ats",
+      "cpu_offload": true,
+      "sequence_mode": "ulysses",
+      "comm_dtype": "fp16",
+      "patch": {
+        "enabled": false,
+        "fp16_safe": true,
+        "debug_finite": false,
+        "mlp_chunk_tokens": 512,
+        "mlp_chunk_mode": "manual"
+      },
+      "requested_attention": "flash_attn",
+      "selected_attention": "sdpa",
+      "load_s": 4.932875101000036,
+      "local_shard_bytes": 5310794432,
+      "shard_devices": [
+        "cpu"
+      ],
+      "import_failures": {
+        "flash_attn": "ModuleNotFoundError: No module named 'flash_attn_2_cuda'",
+        "sdpa": null
+      },
+      "rpc": []
+    },
+    {
+      "session": "powershard-zvqa3svd",
+      "source_sha256": "37f6b3fb941fd5149d688eb54244e78a0d1fa1459575bf940c362664000a3f7e",
+      "role": "h3",
+      "worker_pids": [
+        17661,
+        17663,
+        17665,
+        17668
+      ],
+      "gpu_ids": [
+        "0",
+        "1",
+        "2",
+        "3"
+      ],
+      "placement": "cpu",
+      "cpu_offload": true,
+      "sequence_mode": "token",
+      "comm_dtype": "fp32",
+      "patch": {
+        "enabled": true,
+        "fp16_safe": true,
+        "debug_finite": true,
+        "mlp_chunk_tokens": 4096,
+        "mlp_chunk_mode": "auto"
+      },
+      "requested_attention": "vllm_flash_attn",
+      "selected_attention": "vllm_flash_attn",
+      "load_s": 19.246954021999954,
+      "local_shard_bytes": 10078230016,
+      "shard_devices": [
+        "cpu"
+      ],
+      "import_failures": {
+        "vllm_flash_attn": null
+      },
+      "rpc": [
+        {
+          "sequence": 1,
+          "command": "preprocess_text",
+          "forward_s": 5.741467298000089,
+          "ipc_and_forward_s": 6.184105542999987,
+          "memory": {
+            "device": "cuda:0",
+            "allocated": 257655296,
+            "reserved": 6465519616,
+            "peak_allocated": 4628387328,
+            "peak_reserved": 6465519616,
+            "free": 9145024512,
+            "total": 16911433728
+          },
+          "weight_memory": {
+            "persistent_shard_bytes": 10078230016,
+            "cpu_shard_bytes": 10078230016,
+            "gpu_shard_bytes": 0,
+            "managed_shard_bytes": 0,
+            "placement": "cpu",
+            "ats": null,
+            "replicated_buffer_bytes": 32864,
+            "largest_unsharded_group_bytes": 774209024,
+            "prefetch_blocks": 0,
+            "active_plus_prefetch_parameter_bound_bytes": 774219776,
+            "bound_excludes": "copy/communication buffers, temporary FP32 casts and dequant; inspect CUDA peak/trace",
+            "activation_workspace_bytes": "NOT_SEPARATELY_ATTRIBUTED; included in CUDA allocated/peak"
+          },
+          "plan": {
+            "policy": "auto",
+            "free_at_boundary": 15356788736,
+            "reserve_bytes": 0,
+            "activation_estimate_bytes": 1147087872,
+            "communication_estimate_bytes": 0,
+            "active_group_estimate_bytes": 774209024,
+            "requested_prefetch": 0,
+            "effective_prefetch": 0,
+            "mlp_budget_bytes": 13435491840,
+            "unknown": "allocator fragmentation, kernel workspace, external allocations; no OOM admission gate",
+            "estimated_global_tokens": 5927,
+            "estimated_local_tokens": 5927
+          },
+          "first_mlp": {
+            "mode": "auto",
+            "requested_tokens": 4096,
+            "effective_tokens": 5888,
+            "local_tokens": 5927,
+            "chunks": 2,
+            "workspace_bytes_per_token": 293904,
+            "estimated_chunk_workspace_bytes": 1730506752,
+            "budget_bytes": 13308037632,
+            "prepared_weight_bytes": 462422016,
+            "reason": "auto: локальные tokens, FP32 workspace, reserve, активные веса/prefetch",
+            "estimate_not_measurement": true,
+            "full_output_bytes": 127454208,
+            "preparation_peak_estimate": 2928672768,
+            "preparation": "active MLP, reused across token chunks"
+          },
+          "actual_calls": {
+            "token_refiner:vllm_flash_attn": 2
+          },
+          "semantic_fallbacks": {},
+          "global_tokens": null,
+          "sequence_communication": null
+        },
+        {
+          "sequence": 2,
+          "command": "forward",
+          "forward_s": 61.56016009299992,
+          "ipc_and_forward_s": 61.71306136299995,
+          "memory": {
+            "device": "cuda:0",
+            "allocated": 294539776,
+            "reserved": 11750342656,
+            "peak_allocated": 9955983360,
+            "peak_reserved": 11750342656,
+            "free": 3585671168,
+            "total": 16911433728
+          },
+          "weight_memory": {
+            "persistent_shard_bytes": 10078230016,
+            "cpu_shard_bytes": 10078230016,
+            "gpu_shard_bytes": 0,
+            "managed_shard_bytes": 0,
+            "placement": "cpu",
+            "ats": null,
+            "replicated_buffer_bytes": 32864,
+            "largest_unsharded_group_bytes": 774209024,
+            "prefetch_blocks": 0,
+            "active_plus_prefetch_parameter_bound_bytes": 774219776,
+            "bound_excludes": "copy/communication buffers, temporary FP32 casts and dequant; inspect CUDA peak/trace",
+            "activation_workspace_bytes": "NOT_SEPARATELY_ATTRIBUTED; included in CUDA allocated/peak"
+          },
+          "plan": {
+            "policy": "auto",
+            "free_at_boundary": 8870232064,
+            "reserve_bytes": 0,
+            "activation_estimate_bytes": 2419587072,
+            "communication_estimate_bytes": 3584573440,
+            "active_group_estimate_bytes": 774209024,
+            "requested_prefetch": 0,
+            "effective_prefetch": 0,
+            "mlp_budget_bytes": 2091862528,
+            "unknown": "allocator fragmentation, kernel workspace, external allocations; no OOM admission gate",
+            "conditioning_tokens": "UNKNOWN reference/keyframe expansion; token estimate is a lower bound",
+            "estimated_global_tokens": 25004,
+            "estimated_local_tokens": 6251
+          },
+          "first_mlp": {
+            "mode": "auto",
+            "requested_tokens": 4096,
+            "effective_tokens": 6144,
+            "local_tokens": 11634,
+            "chunks": 2,
+            "workspace_bytes_per_token": 293904,
+            "estimated_chunk_workspace_bytes": 1805746176,
+            "budget_bytes": 1841684992,
+            "prepared_weight_bytes": 0,
+            "reason": "auto: локальные tokens, FP32 workspace, reserve, активные веса/prefetch",
+            "estimate_not_measurement": true,
+            "full_output_bytes": 250177536,
+            "preparation_peak_estimate": 0,
+            "preparation": "per-call tiles; preparation budget insufficient or one chunk"
+          },
+          "actual_calls": {
+            "token_refiner:vllm_flash_attn": 2,
+            "dit:vllm_flash_attn": 50
+          },
+          "semantic_fallbacks": {},
+          "global_tokens": 46535,
+          "sequence_communication": {
+            "kv_all_gathers": 50,
+            "qkv_all_to_all": 0,
+            "gathered_bytes": 133425152000,
+            "final_hidden_all_gathers": 1,
+            "mode": "token",
+            "output_all_to_all": 0,
+            "note": "Logical tensor bytes, not measured NCCL link traffic; Ulysses: fused QKV + output all-to-all"
+          },
+          "next_step_arithmetic_replay": {
+            "not_a_measured_cancelled_rpc": true,
+            "old_plan_budget_bytes": 0,
+            "reusable_cache_bytes": 11455802880,
+            "old_mlp_workspace_after_full_output": 0,
+            "old_mlp_effective_tokens": 1,
+            "new_boundary_budget_bytes": 8263104512
+          },
+          "all_rank_cpu_shards_bytes": 40312920064
+        }
+      ]
+    }
+  ]
+}
