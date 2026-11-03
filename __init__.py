@@ -26,3 +26,26 @@ else:
     from powershard.ltx_nodes import LTX_NODE_CLASS_MAPPINGS, LTX_NODE_DISPLAY_NAME_MAPPINGS
 NODE_CLASS_MAPPINGS = {**NODE_CLASS_MAPPINGS, **LTX_NODE_CLASS_MAPPINGS}
 NODE_DISPLAY_NAME_MAPPINGS = {**NODE_DISPLAY_NAME_MAPPINGS, **LTX_NODE_DISPLAY_NAME_MAPPINGS}
+
+# --- Надёжный Cancel / освобождение VRAM (дополнение; строки выше не изменены) ---
+if __package__:
+    from .powershard.lifecycle import install as _powershard_lifecycle_install
+else:
+    from powershard.lifecycle import install as _powershard_lifecycle_install
+_powershard_lifecycle_install()
+
+# --- Veda Sparse Attention для MiniMax H3 (дополнение; строки выше не изменены) ---
+if __package__:
+    from .powershard.veda_nodes import VEDA_NODE_CLASS_MAPPINGS, VEDA_NODE_DISPLAY_NAME_MAPPINGS
+else:
+    from powershard.veda_nodes import VEDA_NODE_CLASS_MAPPINGS, VEDA_NODE_DISPLAY_NAME_MAPPINGS
+NODE_CLASS_MAPPINGS = {**NODE_CLASS_MAPPINGS, **VEDA_NODE_CLASS_MAPPINGS}
+NODE_DISPLAY_NAME_MAPPINGS = {**NODE_DISPLAY_NAME_MAPPINGS, **VEDA_NODE_DISPLAY_NAME_MAPPINGS}
+
+# --- Общие ноды: формат весов, text encoder, checkpoint info (дополнение; строки выше не изменены) ---
+if __package__:
+    from .powershard.common_nodes import COMMON_NODE_CLASS_MAPPINGS, COMMON_NODE_DISPLAY_NAME_MAPPINGS
+else:
+    from powershard.common_nodes import COMMON_NODE_CLASS_MAPPINGS, COMMON_NODE_DISPLAY_NAME_MAPPINGS
+NODE_CLASS_MAPPINGS = {**NODE_CLASS_MAPPINGS, **COMMON_NODE_CLASS_MAPPINGS}
+NODE_DISPLAY_NAME_MAPPINGS = {**NODE_DISPLAY_NAME_MAPPINGS, **COMMON_NODE_DISPLAY_NAME_MAPPINGS}

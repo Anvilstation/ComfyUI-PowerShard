@@ -1,0 +1,801 @@
+{
+ "last_node_id": 16,
+ "last_link_id": 15,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "PowerShardConfig",
+   "pos": [
+    40,
+    40
+   ],
+   "size": [
+    340,
+    176
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "POWERSHARD_CONFIG",
+     "type": "POWERSHARD_CONFIG",
+     "links": [
+      1,
+      3
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "PowerShardConfig"
+   },
+   "widgets_values": [
+    "all",
+    "gpu",
+    "fp16",
+    "auto",
+    "ulysses"
+   ]
+  },
+  {
+   "id": 2,
+   "type": "PowerShardWanOptions",
+   "pos": [
+    40,
+    256
+   ],
+   "size": [
+    340,
+    202
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "WAN_OPTIONS",
+     "type": "WAN_OPTIONS",
+     "links": [
+      2
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "PowerShardWanOptions"
+   },
+   "widgets_values": [
+    false,
+    "auto",
+    4096,
+    "swap",
+    0,
+    "auto"
+   ]
+  },
+  {
+   "id": 3,
+   "type": "PowerShardWan22MoELoader",
+   "pos": [
+    420,
+    40
+   ],
+   "size": [
+    340,
+    238
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "config",
+     "type": "POWERSHARD_CONFIG",
+     "link": 1
+    },
+    {
+     "name": "options",
+     "type": "WAN_OPTIONS",
+     "link": 2
+    },
+    {
+     "name": "weights",
+     "type": "POWERSHARD_WEIGHTS",
+     "link": null
+    },
+    {
+     "name": "lora",
+     "type": "POWERSHARD_LORA",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [],
+     "slot_index": 0
+    },
+    {
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [],
+     "slot_index": 1
+    },
+    {
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      6
+     ],
+     "slot_index": 2
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "PowerShardWan22MoELoader"
+   },
+   "widgets_values": [
+    "wan2.2_t2v_high_noise_14B_fp16.safetensors",
+    "wan2.2_t2v_low_noise_14B_fp16.safetensors",
+    0.0,
+    true
+   ]
+  },
+  {
+   "id": 4,
+   "type": "PowerShardTextEncoder",
+   "pos": [
+    420,
+    318
+   ],
+   "size": [
+    340,
+    298
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "config",
+     "type": "POWERSHARD_CONFIG",
+     "link": 3
+    },
+    {
+     "name": "weights",
+     "type": "POWERSHARD_WEIGHTS",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "CLIP",
+     "type": "CLIP",
+     "links": [
+      4,
+      5
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "PowerShardTextEncoder"
+   },
+   "widgets_values": [
+    "umt5_xxl_fp16.safetensors",
+    "wan_umt5",
+    "workers",
+    "release",
+    "none",
+    "none",
+    "none",
+    "none"
+   ]
+  },
+  {
+   "id": 5,
+   "type": "CLIPTextEncode",
+   "pos": [
+    800,
+    40
+   ],
+   "size": [
+    340,
+    214
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "clip",
+     "type": "CLIP",
+     "link": 4
+    }
+   ],
+   "outputs": [
+    {
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      8
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CLIPTextEncode"
+   },
+   "widgets_values": [
+    "A slow cinematic orbit around a lighthouse on a rocky shore at sunset, waves crashing on the rocks, warm golden light."
+   ],
+   "title": "Positive"
+  },
+  {
+   "id": 6,
+   "type": "CLIPTextEncode",
+   "pos": [
+    800,
+    294
+   ],
+   "size": [
+    340,
+    214
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "clip",
+     "type": "CLIP",
+     "link": 5
+    }
+   ],
+   "outputs": [
+    {
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      9
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CLIPTextEncode"
+   },
+   "widgets_values": [
+    "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走"
+   ],
+   "title": "Negative"
+  },
+  {
+   "id": 7,
+   "type": "VAELoader",
+   "pos": [
+    40,
+    498
+   ],
+   "size": [
+    340,
+    72
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "VAE",
+     "type": "VAE",
+     "links": [
+      13
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAELoader"
+   },
+   "widgets_values": [
+    "wan_2.1_vae.safetensors"
+   ]
+  },
+  {
+   "id": 8,
+   "type": "ModelSamplingSD3",
+   "pos": [
+    800,
+    548
+   ],
+   "size": [
+    340,
+    94
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 6
+    }
+   ],
+   "outputs": [
+    {
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      7
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "ModelSamplingSD3"
+   },
+   "widgets_values": [
+    8.0
+   ]
+  },
+  {
+   "id": 9,
+   "type": "EmptyHunyuanLatentVideo",
+   "pos": [
+    40,
+    610
+   ],
+   "size": [
+    340,
+    150
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      10
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "EmptyHunyuanLatentVideo"
+   },
+   "widgets_values": [
+    832,
+    480,
+    81,
+    1
+   ]
+  },
+  {
+   "id": 10,
+   "type": "KSampler",
+   "pos": [
+    1180,
+    40
+   ],
+   "size": [
+    340,
+    316
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 7
+    },
+    {
+     "name": "positive",
+     "type": "CONDITIONING",
+     "link": 8
+    },
+    {
+     "name": "negative",
+     "type": "CONDITIONING",
+     "link": 9
+    },
+    {
+     "name": "latent_image",
+     "type": "LATENT",
+     "link": 10
+    }
+   ],
+   "outputs": [
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      11
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "KSampler"
+   },
+   "widgets_values": [
+    42,
+    "fixed",
+    20,
+    3.5,
+    "euler",
+    "simple",
+    1.0
+   ]
+  },
+  {
+   "id": 11,
+   "type": "PowerShardRelease",
+   "pos": [
+    1560,
+    40
+   ],
+   "size": [
+    340,
+    146
+   ],
+   "flags": {},
+   "order": 10,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "samples",
+     "type": "LATENT",
+     "link": 11
+    }
+   ],
+   "outputs": [
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      12
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "STRING",
+     "type": "STRING",
+     "links": [],
+     "slot_index": 1
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "PowerShardRelease"
+   },
+   "widgets_values": [
+    true,
+    false,
+    true
+   ]
+  },
+  {
+   "id": 12,
+   "type": "VAEDecodeTiled",
+   "pos": [
+    1940,
+    40
+   ],
+   "size": [
+    340,
+    194
+   ],
+   "flags": {},
+   "order": 11,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "samples",
+     "type": "LATENT",
+     "link": 12
+    },
+    {
+     "name": "vae",
+     "type": "VAE",
+     "link": 13
+    }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      14
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAEDecodeTiled"
+   },
+   "widgets_values": [
+    512,
+    64,
+    64,
+    8
+   ]
+  },
+  {
+   "id": 13,
+   "type": "CreateVideo",
+   "pos": [
+    2320,
+    40
+   ],
+   "size": [
+    340,
+    194
+   ],
+   "flags": {},
+   "order": 12,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 14
+    },
+    {
+     "name": "audio",
+     "type": "AUDIO",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "VIDEO",
+     "type": "VIDEO",
+     "links": [
+      15
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CreateVideo"
+   },
+   "widgets_values": [
+    16.0,
+    "auto",
+    "sRGB",
+    "none"
+   ]
+  },
+  {
+   "id": 14,
+   "type": "SaveVideo",
+   "pos": [
+    2700,
+    40
+   ],
+   "size": [
+    340,
+    146
+   ],
+   "flags": {},
+   "order": 13,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "video",
+     "type": "VIDEO",
+     "link": 15
+    }
+   ],
+   "outputs": [
+    {
+     "name": "VIDEO",
+     "type": "VIDEO",
+     "links": [],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "SaveVideo"
+   },
+   "widgets_values": [
+    "video/wan22_t2v_a14b",
+    "auto",
+    "auto"
+   ]
+  },
+  {
+   "id": 15,
+   "type": "Note",
+   "pos": [
+    40,
+    -260
+   ],
+   "size": [
+    760,
+    200
+   ],
+   "flags": {},
+   "order": 14,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {
+    "text": ""
+   },
+   "color": "#432",
+   "bgcolor": "#653",
+   "widgets_values": [
+    "PowerShard: модель шардируется по всем GPU из «GPU / память / attention» (gpu_ids=all, sequence_mode=ulysses). Имена файлов — примеры, выберите свои. Release перед VAE освобождает GPU workers.\nEN: the model is sharded across the GPUs selected in the config node. File names are examples - pick your own. Release frees worker VRAM before VAE decode."
+   ]
+  },
+  {
+   "id": 16,
+   "type": "Note",
+   "pos": [
+    40,
+    -480
+   ],
+   "size": [
+    760,
+    200
+   ],
+   "flags": {},
+   "order": 15,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {
+    "text": ""
+   },
+   "color": "#432",
+   "bgcolor": "#653",
+   "widgets_values": [
+    "Wan 2.2 A14B T2V: high+low эксперты в одном пуле workers; выход moe переключает эксперта сам (boundary=0 — авто: T2V 0.875, I2V 0.900), поэтому один KSampler.\nEN: both experts share one worker pool; the moe output switches experts automatically, so a single KSampler is enough."
+   ]
+  }
+ ],
+ "links": [
+  [
+   1,
+   1,
+   0,
+   3,
+   0,
+   "POWERSHARD_CONFIG"
+  ],
+  [
+   2,
+   2,
+   0,
+   3,
+   1,
+   "WAN_OPTIONS"
+  ],
+  [
+   3,
+   1,
+   0,
+   4,
+   0,
+   "POWERSHARD_CONFIG"
+  ],
+  [
+   4,
+   4,
+   0,
+   5,
+   0,
+   "CLIP"
+  ],
+  [
+   5,
+   4,
+   0,
+   6,
+   0,
+   "CLIP"
+  ],
+  [
+   6,
+   3,
+   2,
+   8,
+   0,
+   "MODEL"
+  ],
+  [
+   7,
+   8,
+   0,
+   10,
+   0,
+   "MODEL"
+  ],
+  [
+   8,
+   5,
+   0,
+   10,
+   1,
+   "CONDITIONING"
+  ],
+  [
+   9,
+   6,
+   0,
+   10,
+   2,
+   "CONDITIONING"
+  ],
+  [
+   10,
+   9,
+   0,
+   10,
+   3,
+   "LATENT"
+  ],
+  [
+   11,
+   10,
+   0,
+   11,
+   0,
+   "LATENT"
+  ],
+  [
+   12,
+   11,
+   0,
+   12,
+   0,
+   "LATENT"
+  ],
+  [
+   13,
+   7,
+   0,
+   12,
+   1,
+   "VAE"
+  ],
+  [
+   14,
+   12,
+   0,
+   13,
+   0,
+   "IMAGE"
+  ],
+  [
+   15,
+   13,
+   0,
+   14,
+   0,
+   "VIDEO"
+  ]
+ ],
+ "groups": [],
+ "config": {},
+ "extra": {
+  "ds": {
+   "scale": 0.65,
+   "offset": [
+    40,
+    320
+   ]
+  }
+ },
+ "version": 0.4
+}

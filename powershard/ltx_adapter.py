@@ -15,6 +15,7 @@ import comfy.model_patcher
 from .accel import (HOST_ONLY_TRANSFORMER_KEYS, check_easycache_holder, host_safe_model_options, run_diffusion_wrappers,
                     strip_host_safe_wrappers)
 from .comfy_adapter import PowerShardPatcher
+from .lifecycle import BoundaryPatcherMixin
 from .conditioning_cache import content_hash
 from .host_guard import strip_internal_wrappers
 from .wire import StagedTensor, has_effect, validate_options
@@ -86,6 +87,8 @@ class LTXDiffusionProxy(torch.nn.Module):
     def preprocess_text_embeds(self, context, unprocessed=False):
         """Коннекторы текста считаются в workers; результат кэшируется на host (общий conditioning cache)."""
         from .wan_text import shared_cache
+        if not self.av:
+            return context  # LTX-Video: коннекторов нет (native LTXV.extra_conds не вызывает preprocess_text_embeds)
         if not unprocessed and context.shape[-1] in (self.cross_attention_dim + self.audio_cross_attention_dim,
                                                      self.caption_channels * 2):
             return context
@@ -203,7 +206,11 @@ def validate_host_options(patcher, label):
     return options
 
 
-class LTXPatcher(PowerShardPatcher):
+class LTXPatcher(BoundaryPatcherMixin, PowerShardPatcher):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._install_boundary()
+
     def clone(self, *args, **kwargs):
         result = comfy.model_patcher.ModelPatcher.clone(self, *args, **kwargs)
         if hasattr(self, "powershard_memory_plan"):

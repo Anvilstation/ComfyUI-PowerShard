@@ -53,17 +53,23 @@ def joint_v_scale(tensors, collective):
     return power2_scale(maximum / 16384.)
 
 
-def pose_tail_attention(attn, q, k, v, kp, vp, segments, hw, sq, sk, sv, restore):
+def pose_tail_attention(attn, q, k, v, kp, vp, segments, hw, sq, sk, sv, restore, buffers=None):
     """Кадр g видит все токены генерации + кадр g-1 pose branch (кадр 0 — слот референса, без хвоста).
 
     q — строки segments; k/v — вся генерация; kp/vp — вся pose последовательность.
     Буфер [gen | hw] выделяется один раз, переписывается только хвост (как native).
+    buffers=(kbuf, vbuf): генерация уже собрана прямо в буферы (без лишней копии K/V — токен-режим).
     """
     run = _wm().run_attention
-    length = k.shape[1]
-    kbuf = k.new_empty((k.shape[0], length + hw) + tuple(k.shape[2:]))
-    vbuf = v.new_empty((v.shape[0], length + hw) + tuple(v.shape[2:]))
-    kbuf[:, :length], vbuf[:, :length] = k, v
+    if buffers is not None:
+        kbuf, vbuf = buffers
+        length = kbuf.shape[1] - hw
+        k, v = kbuf[:, :length], vbuf[:, :length]
+    else:
+        length = k.shape[1]
+        kbuf = k.new_empty((k.shape[0], length + hw) + tuple(k.shape[2:]))
+        vbuf = v.new_empty((v.shape[0], length + hw) + tuple(v.shape[2:]))
+        kbuf[:, :length], vbuf[:, :length] = k, v
     out = q.new_zeros(q.shape[:-1] + (v.shape[-1],), dtype=torch.float32 if restore else torch.float16)
     for start, stop, g in segments:
         if g == 0:
@@ -112,13 +118,20 @@ def animate2_attention(attn, q, k, v, kp, vp, plan):
             out = out.float() * sv
     else:
         with region("wan_sequence_KV_all_gather"):
-            kv = wm.gather_tokens(torch.stack((k, v), dim=2), total)
-            kvp = wm.gather_tokens(torch.stack((kp, vp), dim=2), total_p)
-        state["kv_collectives"] += 2
-        state["kv_gathered_bytes"] += kv.numel() * kv.element_size() + kvp.numel() * kvp.element_size()
-        (k, v), (kp, vp) = kv.unbind(2), kvp.unbind(2)
+            # Генерация собирается сразу в буферы [gen | хвост hw]: пик VRAM — одна копия K/V, а не три.
+            buffers = []
+            for local in (k, v):
+                buffer = local.new_empty((local.shape[0], total + hw) + tuple(local.shape[2:]))
+                buffer[:, :total] = wm.gather_tokens(local, total)
+                buffers.append(buffer)
+            del k, v
+            kp, vp = wm.gather_tokens(kp, total_p), wm.gather_tokens(vp, total_p)
+        state["kv_collectives"] += 4
+        state["kv_gathered_bytes"] += sum(t[:, :total].numel() * t.element_size() for t in buffers) + \
+            kp.numel() * kp.element_size() + vp.numel() * vp.element_size()
         a, b = plan["rows"]
-        out = pose_tail_attention(attn, q, k, v, kp, vp, wm.frame_segments(a, b, hw), hw, sq, sk, sv, True)
+        out = pose_tail_attention(attn, q, None, None, kp, vp, wm.frame_segments(a, b, hw), hw, sq, sk, sv, True,
+                                  buffers=tuple(buffers))
     state["effective_comm_dtype"] = "float16" if fp16_wire else "float32"
     return out
 

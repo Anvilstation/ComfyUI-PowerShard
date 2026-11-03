@@ -836,6 +836,8 @@ def wan_forward(net, x, timestep, context, clip_fea=None, time_dim_concat=None, 
     state["blocks_skipped"] = False
     if kind == "animate2" and (_powershard_block_cache or _powershard_nag or _powershard_riflex):
         raise ValueError("Block Cache / NAG / RIFLEx для Wan Animate2 не поддерживаются (отдельный pose-branch forward)")
+    if kind in ("scail", "wandancer") and _powershard_riflex:
+        raise ValueError(f"RIFLEx для {kind} не поддерживается (своя RoPE с позициями pose/музыки); уберите узел RIFLEx")
     state.pop("x_ref_attn_map", None)
     if kind == "animate2":
         return animate2_forward(net, x, timestep, context, clip_fea, options, extras, _powershard_animate2_cache,
@@ -1172,6 +1174,8 @@ def batch_rows(rows, options):
 
 
 def block_cache_spec(spec, options, cache, blocks):
+    if spec and cache is not None:
+        cache.prune(spec)  # и на неактивных шагах: записи прошлого прохода/эксперта не держат VRAM
     if not spec or not spec.get("active") or cache is None or blocks < 2:
         return None
     part = options.get("_ps_rows")

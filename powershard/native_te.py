@@ -20,7 +20,8 @@ TOKENIZER_KEYS = ("spiece_model", "tokenizer_json", "tokenizer", "gemma_spiece_m
                   "yue2_tokenizer_json")
 SMALL_REAL_BYTES = 64 * 2**20
 SAFETENSORS_DTYPES = {"F16": "float16", "BF16": "bfloat16", "F32": "float32", "F64": "float64",
-                      "F8_E4M3": "float8_e4m3fn", "F8_E5M2": "float8_e5m2", "U8": "uint8", "I8": "int8",
+                      "F8_E4M3": "float8_e4m3fn", "F8_E5M2": "float8_e5m2", "F8_E8M0": "float8_e8m0fnu",
+                      "U8": "uint8", "I8": "int8",
                       "I16": "int16", "I32": "int32", "I64": "int64", "BOOL": "bool"}
 SCALE_SUFFIXES = (".weight_scale", ".scale_weight")
 NUMERIC_TAG = "native-te-fp32-compute-v1"
@@ -104,9 +105,28 @@ def prepare_state_dicts(paths):
     return sds, headers
 
 
+# Минимальная версия ComfyUI, где появился тип энкодера (для понятной ошибки на старой ComfyUI).
+CLIP_TYPE_SINCE = {"MOSS_IMAGE": "0.42", "FIBO2": "0.43", "FLUX3": "0.41", "KREA2": "0.40"}
+
+
+def comfy_version():
+    try:
+        import comfyui_version
+        return comfyui_version.__version__
+    except Exception:
+        return "неизвестна"
+
+
 def clip_type_value(name):
     import comfy.sd
-    return getattr(comfy.sd.CLIPType, name.upper())
+    key = name.upper()
+    value = getattr(comfy.sd.CLIPType, key, None)
+    if value is None:
+        since = CLIP_TYPE_SINCE.get(key)
+        raise ValueError(f"Ваша ComfyUI ({comfy_version()}) не знает text encoder типа {name!r}"
+                         + (f": он появился в ComfyUI v{since}" if since else "")
+                         + ". Обновите ComfyUI — PowerShard использует её код энкодеров и моделей")
+    return value
 
 
 # ----------------------------------------------------------------- worker side
@@ -334,6 +354,8 @@ class NativeTEBackend:
         from .quant_linear import install_quant_linears
         options = dict(options or {})
         weight_format, compute = options.get("weight_format", "dequantize"), options.get("compute", "auto")
+        if compute == "auto":
+            compute = "dequantize"  # как ComfyUI (full_precision_mm у text encoders): квант. активаций LLM портит выбросы
         _, layer_chain = te_units(model)
         module_names = {id(m): n for n, m in model.named_modules()}
         scope = tuple(module_names[id(m)] + "." for m in layer_chain) or None
@@ -419,6 +441,8 @@ class NativeTEBackend:
         for unit in self.units:
             unit.reshard()
         sync(self.device)
+        if self.device.type == "cuda":
+            torch.cuda.empty_cache()
         return dict(after=memory(self.device), cpu_shard_bytes=self.shard_bytes if self.config.cpu_offload else 0)
 
     def end_run(self):
@@ -462,10 +486,16 @@ class TEProxy(nn.Module):
         from .conditioning_cache import content_hash
         start = time.perf_counter()
         options = {k: v for k, v in self.clip_options.items() if k != "execution_device"}
+        if isinstance(options.get("layer"), int) and getattr(self, "default_layer", None) == "all":
+            options.pop("layer")  # как native: у энкодеров layer="all" (Gemma/LTXAV) CLIPSetLastLayer ничего не меняет
         if options.get("layer") not in (None, "last", "all") or options.get("projected_pooled") is not None:
             raise ValueError(f"Distributed text encoder: clip options {options} не поддерживаются")
         stamps = [(p, Path(p).stat().st_size, Path(p).stat().st_mtime_ns) for p in self.files]
-        key = content_hash(dict(tokens=tokens, files=stamps, numeric=NUMERIC_TAG, role="native_te"))
+        # Ключ кэша: всё, что меняет результат — файлы, формат весов/вычисление, класс GPU (bf16-проекция LTXAV).
+        key = content_hash(dict(tokens=tokens, files=stamps, numeric=NUMERIC_TAG, role="native_te",
+                                options=self.session.role_options.get("options"),
+                                clip_type=self.session.role_options.get("clip_type"),
+                                gpus=getattr(self, "gpu_signature", None)))
         result = self.cache.get(key)
         hit = result is not None
         if not hit:
@@ -500,8 +530,9 @@ def _patcher_class():
                 raise ValueError("Distributed text encoder: model_options patches не переносятся в workers")
 
         def add_patches(self, patches, *args, **kwargs):
-            if patches:
-                raise ValueError("LoRA для distributed text encoder не реализована")
+            # Native LoraLoader передаёт сюда ВСЕ ключи (в т.ч. диффузионной модели). Как ModelPatcher, берём только
+            # свои — у distributed энкодера весов на host нет, поэтому ни одного; ключи текстового энкодера ComfyUI
+            # пометит в логе как "NOT LOADED" (LoRA для distributed TE не применяется).
             return []
 
         def clone(self, *args, **kwargs):
@@ -509,6 +540,8 @@ def _patcher_class():
             proxy = TEProxy(self.session, self.model.after_encode, self.model.files)
             proxy.cache = self.model.cache
             proxy.clip_options = dict(self.model.clip_options)
+            proxy.gpu_signature = getattr(self.model, "gpu_signature", None)
+            proxy.default_layer = getattr(self.model, "default_layer", None)
             other.model = proxy
             return other
 
@@ -573,6 +606,30 @@ def _clip_class():
     return DistributedNativeCLIP
 
 
+def _default_layer(target, depth=0, cls=None):
+    """layer по умолчанию у класса энкодера ("all" у Gemma/LTXAV) — только сигнатуры, без создания модели.
+
+    Обёртки (LTXAVTEModel) передают класс энкодера параметром (text_encoder_model=Gemma3_12BModel) — смотрим и его.
+    """
+    import inspect
+    cls = target.clip if cls is None else cls
+    try:
+        for klass in inspect.getmro(cls):
+            init = klass.__dict__.get("__init__")
+            if init is None:
+                continue
+            for name, param in inspect.signature(init).parameters.items():
+                if name == "layer" and param.default is not inspect.Parameter.empty:
+                    return param.default
+                if depth < 2 and inspect.isclass(param.default) and issubclass(param.default, torch.nn.Module):
+                    found = _default_layer(target, depth + 1, param.default)
+                    if found is not None:
+                        return found
+    except (TypeError, ValueError):
+        pass
+    return None
+
+
 def load_distributed_te(paths, clip_type, config, after_encode="release", report_dir=None, embedding_directory=None,
                         weight_format="dequantize", compute="auto"):
     from dataclasses import replace
@@ -584,14 +641,14 @@ def load_distributed_te(paths, clip_type, config, after_encode="release", report
         raise ValueError("after_encode: release / release_now / keep_ram")
     from .quant_formats import validate_quant_choice
     validate_quant_choice(weight_format, compute)
-    if after_encode == "keep_ram" and not config.cpu_offload:
-        raise ValueError("after_encode=keep_ram требует weight_placement=cpu (shards в pinned RAM)")
     paths = [str(Path(p).resolve()) for p in paths]
     sds, headers = prepare_state_dicts(paths)
     holder = capture_clip_target(sds, clip_type_value(clip_type))
     target = holder["target"]
     tokenizer = target.tokenizer(embedding_directory=embedding_directory, tokenizer_data=holder["tokenizer_data"])
-    config = replace(config, precision="fp16", release_after_sampling=True)
+    # keep_ram: workers живут между задачами, при старте генератора shards паркуются в RAM (session.idle),
+    # следующий encode восстанавливает их без чтения файла (при weight_placement=gpu — копией RAM -> VRAM).
+    config = replace(config, precision="fp16", release_after_sampling=after_encode != "keep_ram")
     comfy_path = Path(comfy.sd.__file__).resolve().parents[1]
     role_options = dict(kind="native_te", experts={f"te{i}": p for i, p in enumerate(paths)}, files=paths,
                         clip_type=clip_type, options=dict(weight_format=weight_format, compute=compute),
@@ -602,6 +659,8 @@ def load_distributed_te(paths, clip_type, config, after_encode="release", report
     total = sum(math.prod(d["shape"]) * 2 for h in headers for k, d in h.items()
                 if d["dtype"] != "U8" or "comfy_quant" in d)
     proxy = TEProxy(session, after_encode, paths)
+    proxy.gpu_signature = [list(d.get("capability") or ()) for d in selected]
+    proxy.default_layer = _default_layer(target)
     clip = _clip_class()(no_init=True)
     clip.patcher = _patcher_class()(proxy, torch.device("cuda", int(selected[0]["user_id"])), torch.device("cpu"), size=0)
     clip.patcher.powershard_memory_plan = dict(fp16_bytes_upper_bound=total, shard_bytes_lower_bound=total // max(1, len(selected)),

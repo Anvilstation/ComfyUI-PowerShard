@@ -1,0 +1,1335 @@
+{
+ "last_node_id": 26,
+ "last_link_id": 30,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "PowerShardConfig",
+   "pos": [
+    40,
+    40
+   ],
+   "size": [
+    340,
+    176
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "POWERSHARD_CONFIG",
+     "type": "POWERSHARD_CONFIG",
+     "links": [
+      1,
+      3
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "PowerShardConfig"
+   },
+   "widgets_values": [
+    "all",
+    "gpu",
+    "fp16",
+    "auto",
+    "ulysses"
+   ]
+  },
+  {
+   "id": 2,
+   "type": "PowerShardLTXOptions",
+   "pos": [
+    40,
+    256
+   ],
+   "size": [
+    340,
+    176
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "LTX_OPTIONS",
+     "type": "LTX_OPTIONS",
+     "links": [
+      2
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "PowerShardLTXOptions"
+   },
+   "widgets_values": [
+    false,
+    "auto",
+    4096,
+    0,
+    8192
+   ]
+  },
+  {
+   "id": 3,
+   "type": "PowerShardLTXLoader",
+   "pos": [
+    420,
+    40
+   ],
+   "size": [
+    340,
+    186
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "config",
+     "type": "POWERSHARD_CONFIG",
+     "link": 1
+    },
+    {
+     "name": "options",
+     "type": "LTX_OPTIONS",
+     "link": 2
+    },
+    {
+     "name": "weights",
+     "type": "POWERSHARD_WEIGHTS",
+     "link": null
+    },
+    {
+     "name": "lora",
+     "type": "POWERSHARD_LORA",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      11
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "PowerShardLTXLoader"
+   },
+   "widgets_values": [
+    "checkpoints/ltx-2.3-22b-dev.safetensors",
+    true
+   ]
+  },
+  {
+   "id": 4,
+   "type": "PowerShardTextEncoder",
+   "pos": [
+    420,
+    266
+   ],
+   "size": [
+    340,
+    298
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "config",
+     "type": "POWERSHARD_CONFIG",
+     "link": 3
+    },
+    {
+     "name": "weights",
+     "type": "POWERSHARD_WEIGHTS",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "CLIP",
+     "type": "CLIP",
+     "links": [
+      4,
+      5
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "PowerShardTextEncoder"
+   },
+   "widgets_values": [
+    "gemma_3_12B_it.safetensors",
+    "ltx_gemma",
+    "workers",
+    "release",
+    "none",
+    "none",
+    "none",
+    "checkpoints/ltx-2.3-22b-dev.safetensors"
+   ]
+  },
+  {
+   "id": 5,
+   "type": "CLIPTextEncode",
+   "pos": [
+    800,
+    40
+   ],
+   "size": [
+    340,
+    214
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "clip",
+     "type": "CLIP",
+     "link": 4
+    }
+   ],
+   "outputs": [
+    {
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      6
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CLIPTextEncode"
+   },
+   "widgets_values": [
+    "A lighthouse keeper climbs the spiral stairs at dusk, his lantern swinging; waves crash on the rocks outside and the wind howls through the window. He says quietly: \"Another storm tonight.\""
+   ],
+   "title": "Positive"
+  },
+  {
+   "id": 6,
+   "type": "CLIPTextEncode",
+   "pos": [
+    800,
+    294
+   ],
+   "size": [
+    340,
+    214
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "clip",
+     "type": "CLIP",
+     "link": 5
+    }
+   ],
+   "outputs": [
+    {
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      7
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CLIPTextEncode"
+   },
+   "widgets_values": [
+    "blurry, low quality, still frame, frames, watermark, overlay, titles, has blurbox, has subtitles, distorted, deformed, disfigured, bad anatomy, static, jitter"
+   ],
+   "title": "Negative"
+  },
+  {
+   "id": 7,
+   "type": "LTXVConditioning",
+   "pos": [
+    1180,
+    40
+   ],
+   "size": [
+    340,
+    116
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "positive",
+     "type": "CONDITIONING",
+     "link": 6
+    },
+    {
+     "name": "negative",
+     "type": "CONDITIONING",
+     "link": 7
+    }
+   ],
+   "outputs": [
+    {
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      15
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      16
+     ],
+     "slot_index": 1
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LTXVConditioning"
+   },
+   "widgets_values": [
+    24.0
+   ]
+  },
+  {
+   "id": 8,
+   "type": "PowerShardLTXVAELoader",
+   "pos": [
+    40,
+    472
+   ],
+   "size": [
+    340,
+    72
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "VAE",
+     "type": "VAE",
+     "links": [
+      25
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "VAE",
+     "type": "VAE",
+     "links": [
+      8,
+      27
+     ],
+     "slot_index": 1
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "PowerShardLTXVAELoader"
+   },
+   "widgets_values": [
+    "checkpoints/ltx-2.3-22b-dev.safetensors"
+   ]
+  },
+  {
+   "id": 9,
+   "type": "EmptyLTXVLatentVideo",
+   "pos": [
+    40,
+    584
+   ],
+   "size": [
+    340,
+    150
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      9
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "EmptyLTXVLatentVideo"
+   },
+   "widgets_values": [
+    768,
+    512,
+    121,
+    1
+   ]
+  },
+  {
+   "id": 10,
+   "type": "LTXVEmptyLatentAudio",
+   "pos": [
+    420,
+    604
+   ],
+   "size": [
+    340,
+    146
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "audio_vae",
+     "type": "VAE",
+     "link": 8
+    }
+   ],
+   "outputs": [
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      10
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LTXVEmptyLatentAudio"
+   },
+   "widgets_values": [
+    121,
+    24.0,
+    1
+   ]
+  },
+  {
+   "id": 11,
+   "type": "LTXVConcatAVLatent",
+   "pos": [
+    800,
+    548
+   ],
+   "size": [
+    340,
+    116
+   ],
+   "flags": {},
+   "order": 10,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "video_latent",
+     "type": "LATENT",
+     "link": 9
+    },
+    {
+     "name": "audio_latent",
+     "type": "LATENT",
+     "link": 10
+    }
+   ],
+   "outputs": [
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      13,
+      21
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LTXVConcatAVLatent"
+   },
+   "widgets_values": []
+  },
+  {
+   "id": 12,
+   "type": "LTXVSpatioTemporalGuidance",
+   "pos": [
+    800,
+    704
+   ],
+   "size": [
+    340,
+    172
+   ],
+   "flags": {},
+   "order": 11,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 11
+    }
+   ],
+   "outputs": [
+    {
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      12
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LTXVSpatioTemporalGuidance"
+   },
+   "widgets_values": [
+    1.0,
+    "29",
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": 13,
+   "type": "LTXVModalityGuidance",
+   "pos": [
+    1180,
+    196
+   ],
+   "size": [
+    340,
+    146
+   ],
+   "flags": {},
+   "order": 12,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 12
+    }
+   ],
+   "outputs": [
+    {
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      14
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LTXVModalityGuidance"
+   },
+   "widgets_values": [
+    3.0,
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": 14,
+   "type": "LTXVScheduler",
+   "pos": [
+    1180,
+    382
+   ],
+   "size": [
+    340,
+    198
+   ],
+   "flags": {},
+   "order": 13,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "latent",
+     "type": "LATENT",
+     "link": 13
+    }
+   ],
+   "outputs": [
+    {
+     "name": "SIGMAS",
+     "type": "SIGMAS",
+     "links": [
+      20
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LTXVScheduler"
+   },
+   "widgets_values": [
+    30,
+    2.05,
+    0.95,
+    true,
+    0.1
+   ]
+  },
+  {
+   "id": 15,
+   "type": "LTXVDualCFGGuider",
+   "pos": [
+    1560,
+    40
+   ],
+   "size": [
+    340,
+    164
+   ],
+   "flags": {},
+   "order": 14,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 14
+    },
+    {
+     "name": "positive",
+     "type": "CONDITIONING",
+     "link": 15
+    },
+    {
+     "name": "negative",
+     "type": "CONDITIONING",
+     "link": 16
+    }
+   ],
+   "outputs": [
+    {
+     "name": "GUIDER",
+     "type": "GUIDER",
+     "links": [
+      18
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LTXVDualCFGGuider"
+   },
+   "widgets_values": [
+    3.0,
+    7.0
+   ]
+  },
+  {
+   "id": 16,
+   "type": "KSamplerSelect",
+   "pos": [
+    40,
+    774
+   ],
+   "size": [
+    340,
+    72
+   ],
+   "flags": {},
+   "order": 15,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "SAMPLER",
+     "type": "SAMPLER",
+     "links": [
+      19
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "KSamplerSelect"
+   },
+   "widgets_values": [
+    "euler"
+   ]
+  },
+  {
+   "id": 17,
+   "type": "RandomNoise",
+   "pos": [
+    40,
+    886
+   ],
+   "size": [
+    340,
+    98
+   ],
+   "flags": {},
+   "order": 16,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "NOISE",
+     "type": "NOISE",
+     "links": [
+      17
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "RandomNoise"
+   },
+   "widgets_values": [
+    42,
+    "fixed"
+   ]
+  },
+  {
+   "id": 18,
+   "type": "SamplerCustomAdvanced",
+   "pos": [
+    1940,
+    40
+   ],
+   "size": [
+    340,
+    182
+   ],
+   "flags": {},
+   "order": 17,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "noise",
+     "type": "NOISE",
+     "link": 17
+    },
+    {
+     "name": "guider",
+     "type": "GUIDER",
+     "link": 18
+    },
+    {
+     "name": "sampler",
+     "type": "SAMPLER",
+     "link": 19
+    },
+    {
+     "name": "sigmas",
+     "type": "SIGMAS",
+     "link": 20
+    },
+    {
+     "name": "latent_image",
+     "type": "LATENT",
+     "link": 21
+    }
+   ],
+   "outputs": [
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      22
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [],
+     "slot_index": 1
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "SamplerCustomAdvanced"
+   },
+   "widgets_values": []
+  },
+  {
+   "id": 19,
+   "type": "PowerShardRelease",
+   "pos": [
+    2320,
+    40
+   ],
+   "size": [
+    340,
+    146
+   ],
+   "flags": {},
+   "order": 18,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "samples",
+     "type": "LATENT",
+     "link": 22
+    }
+   ],
+   "outputs": [
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      23
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "STRING",
+     "type": "STRING",
+     "links": [],
+     "slot_index": 1
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "PowerShardRelease"
+   },
+   "widgets_values": [
+    true,
+    false,
+    true
+   ]
+  },
+  {
+   "id": 20,
+   "type": "LTXVSeparateAVLatent",
+   "pos": [
+    2700,
+    40
+   ],
+   "size": [
+    340,
+    94
+   ],
+   "flags": {},
+   "order": 19,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "av_latent",
+     "type": "LATENT",
+     "link": 23
+    }
+   ],
+   "outputs": [
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      24
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      26
+     ],
+     "slot_index": 1
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LTXVSeparateAVLatent"
+   },
+   "widgets_values": []
+  },
+  {
+   "id": 21,
+   "type": "VAEDecodeTiled",
+   "pos": [
+    3080,
+    40
+   ],
+   "size": [
+    340,
+    194
+   ],
+   "flags": {},
+   "order": 20,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "samples",
+     "type": "LATENT",
+     "link": 24
+    },
+    {
+     "name": "vae",
+     "type": "VAE",
+     "link": 25
+    }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      28
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAEDecodeTiled"
+   },
+   "widgets_values": [
+    512,
+    64,
+    64,
+    8
+   ]
+  },
+  {
+   "id": 22,
+   "type": "LTXVAudioVAEDecode",
+   "pos": [
+    3080,
+    274
+   ],
+   "size": [
+    340,
+    116
+   ],
+   "flags": {},
+   "order": 21,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "samples",
+     "type": "LATENT",
+     "link": 26
+    },
+    {
+     "name": "audio_vae",
+     "type": "VAE",
+     "link": 27
+    }
+   ],
+   "outputs": [
+    {
+     "name": "AUDIO",
+     "type": "AUDIO",
+     "links": [
+      29
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LTXVAudioVAEDecode"
+   },
+   "widgets_values": []
+  },
+  {
+   "id": 23,
+   "type": "CreateVideo",
+   "pos": [
+    3460,
+    40
+   ],
+   "size": [
+    340,
+    194
+   ],
+   "flags": {},
+   "order": 22,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 28
+    },
+    {
+     "name": "audio",
+     "type": "AUDIO",
+     "link": 29
+    }
+   ],
+   "outputs": [
+    {
+     "name": "VIDEO",
+     "type": "VIDEO",
+     "links": [
+      30
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CreateVideo"
+   },
+   "widgets_values": [
+    24.0,
+    "auto",
+    "sRGB",
+    "none"
+   ]
+  },
+  {
+   "id": 24,
+   "type": "SaveVideo",
+   "pos": [
+    3840,
+    40
+   ],
+   "size": [
+    340,
+    146
+   ],
+   "flags": {},
+   "order": 23,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "video",
+     "type": "VIDEO",
+     "link": 30
+    }
+   ],
+   "outputs": [
+    {
+     "name": "VIDEO",
+     "type": "VIDEO",
+     "links": [],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "SaveVideo"
+   },
+   "widgets_values": [
+    "video/ltx2_t2v",
+    "auto",
+    "auto"
+   ]
+  },
+  {
+   "id": 25,
+   "type": "Note",
+   "pos": [
+    40,
+    -260
+   ],
+   "size": [
+    760,
+    200
+   ],
+   "flags": {},
+   "order": 24,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {
+    "text": ""
+   },
+   "color": "#432",
+   "bgcolor": "#653",
+   "widgets_values": [
+    "PowerShard: модель шардируется по всем GPU из «GPU / память / attention» (gpu_ids=all, sequence_mode=ulysses). Имена файлов — примеры, выберите свои. Release перед VAE освобождает GPU workers.\nEN: the model is sharded across the GPUs selected in the config node. File names are examples - pick your own. Release frees worker VRAM before VAE decode."
+   ]
+  },
+  {
+   "id": 26,
+   "type": "Note",
+   "pos": [
+    40,
+    -480
+   ],
+   "size": [
+    760,
+    200
+   ],
+   "flags": {},
+   "order": 25,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {
+    "text": ""
+   },
+   "color": "#432",
+   "bgcolor": "#653",
+   "widgets_values": [
+    "LTX-2.3 видео+звук: Gemma и DiT шардируются по GPU, VAE видео и звука читаются из того же checkpoint без весов DiT.\nEN: Gemma and the DiT are sharded across GPUs; both VAEs are read from the same checkpoint without loading the DiT weights."
+   ]
+  }
+ ],
+ "links": [
+  [
+   1,
+   1,
+   0,
+   3,
+   0,
+   "POWERSHARD_CONFIG"
+  ],
+  [
+   2,
+   2,
+   0,
+   3,
+   1,
+   "LTX_OPTIONS"
+  ],
+  [
+   3,
+   1,
+   0,
+   4,
+   0,
+   "POWERSHARD_CONFIG"
+  ],
+  [
+   4,
+   4,
+   0,
+   5,
+   0,
+   "CLIP"
+  ],
+  [
+   5,
+   4,
+   0,
+   6,
+   0,
+   "CLIP"
+  ],
+  [
+   6,
+   5,
+   0,
+   7,
+   0,
+   "CONDITIONING"
+  ],
+  [
+   7,
+   6,
+   0,
+   7,
+   1,
+   "CONDITIONING"
+  ],
+  [
+   8,
+   8,
+   1,
+   10,
+   0,
+   "VAE"
+  ],
+  [
+   9,
+   9,
+   0,
+   11,
+   0,
+   "LATENT"
+  ],
+  [
+   10,
+   10,
+   0,
+   11,
+   1,
+   "LATENT"
+  ],
+  [
+   11,
+   3,
+   0,
+   12,
+   0,
+   "MODEL"
+  ],
+  [
+   12,
+   12,
+   0,
+   13,
+   0,
+   "MODEL"
+  ],
+  [
+   13,
+   11,
+   0,
+   14,
+   0,
+   "LATENT"
+  ],
+  [
+   14,
+   13,
+   0,
+   15,
+   0,
+   "MODEL"
+  ],
+  [
+   15,
+   7,
+   0,
+   15,
+   1,
+   "CONDITIONING"
+  ],
+  [
+   16,
+   7,
+   1,
+   15,
+   2,
+   "CONDITIONING"
+  ],
+  [
+   17,
+   17,
+   0,
+   18,
+   0,
+   "NOISE"
+  ],
+  [
+   18,
+   15,
+   0,
+   18,
+   1,
+   "GUIDER"
+  ],
+  [
+   19,
+   16,
+   0,
+   18,
+   2,
+   "SAMPLER"
+  ],
+  [
+   20,
+   14,
+   0,
+   18,
+   3,
+   "SIGMAS"
+  ],
+  [
+   21,
+   11,
+   0,
+   18,
+   4,
+   "LATENT"
+  ],
+  [
+   22,
+   18,
+   0,
+   19,
+   0,
+   "LATENT"
+  ],
+  [
+   23,
+   19,
+   0,
+   20,
+   0,
+   "LATENT"
+  ],
+  [
+   24,
+   20,
+   0,
+   21,
+   0,
+   "LATENT"
+  ],
+  [
+   25,
+   8,
+   0,
+   21,
+   1,
+   "VAE"
+  ],
+  [
+   26,
+   20,
+   1,
+   22,
+   0,
+   "LATENT"
+  ],
+  [
+   27,
+   8,
+   1,
+   22,
+   1,
+   "VAE"
+  ],
+  [
+   28,
+   21,
+   0,
+   23,
+   0,
+   "IMAGE"
+  ],
+  [
+   29,
+   22,
+   0,
+   23,
+   1,
+   "AUDIO"
+  ],
+  [
+   30,
+   23,
+   0,
+   24,
+   0,
+   "VIDEO"
+  ]
+ ],
+ "groups": [],
+ "config": {},
+ "extra": {
+  "ds": {
+   "scale": 0.65,
+   "offset": [
+    40,
+    320
+   ]
+  }
+ },
+ "version": 0.4
+}

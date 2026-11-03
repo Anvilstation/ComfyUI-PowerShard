@@ -13,3 +13,29 @@ ComfyUI-PowerShard, 2026. Код пакета: GPL-3.0-or-later, см. LICENSE.
 - Icbears/minimax-h3-v100-patch (GPL-3.0-only): только техническое исследование; исходный код не копировался и не включён.
 
 SHA и hashes API-файлов: sources.lock.json. Это provenance, НЕ admission/version gate.
+
+--- Дополнения 2026 (Wan 2.1/2.2, LTX-2, общий формат весов, Veda, Cancel/VRAM) ---
+Это изменённая версия ComfyUI-PowerShard 0.5.3 (GPL-3.0-or-later, раздел 5a): исходные файлы 0.5.3 не изменены,
+к __init__.py и tests/conftest.py только дописаны строки; новые файлы перечислены в review/changes_wan22.patch.
+Код дополнений сгенерирован ИИ (vibe-code) и проверялся только на IBM AC922 (POWER9, 6x Tesla V100 16 GB).
+
+- ComfyUI (Comfy Org и contributors, GPL-3.0): powershard/wan_model.py, ltx_model.py, native_te.py повторяют
+  forward родных моделей comfy.ldm.wan / comfy.ldm.lightricks и вызывают установленные классы ComfyUI.
+- Veda-on-ComfyUI (https://github.com/veda-sparse/Veda-on-ComfyUI, MIT, (c) 2026 veda-sparse) и Miowtion (MIT):
+  powershard/veda/* — перенос и переработка, см. powershard/veda/NOTICE.md, licenses/Veda-on-ComfyUI-MIT.txt.
+- SageAttention 1.0.6 (Thu-ML; PyPI: BSD-3-Clause, GitHub: Apache-2.0): INT8-ядро Veda, см.
+  licenses/SageAttention-NOTICE.txt.
+- Алгоритмы по публикациям, реализация самостоятельная (код не копировался): TeaCache / First Block Cache,
+  Normalized Attention Guidance (NAG), RIFLEx, LoRA / LoHa / LoKr (форматы ключей kohya / diffusers / LyCORIS).
+- Веса моделей не входят в пакет и распространяются по своим лицензиям: Wan 2.1/2.2 (Apache-2.0), LTX-2 (LTX-2
+  Community License), MiniMax H3 и предикторы Veda (MiniMax H3 Community License), Gemma (Gemma Terms of Use),
+  Qwen3-VL (Apache-2.0), umT5 (Apache-2.0). Пользователь сам принимает эти лицензии при скачивании.
+- Негативный prompt в example_workflows/wan22_* взят из официальных шаблонов Wan (Apache-2.0).
+
+--- Дополнения ноябрь 2026 (image-модели, LoRA H3) ---
+- Image-модели (SDXL, Flux, Flux.2, Z-Image, Qwen-Image, MOSS-Image и др.) строятся и считаются установленным кодом
+  ComfyUI (GPL-3.0); PowerShard его не копирует, а вызывает и подменяет forward блоков обёртками (image_parallel.py).
+  LoRA H3 и image-моделей разбирается установленным comfy.lora.
+- Веса image-моделей не входят в пакет и распространяются по своим лицензиям, например: SDXL — CreativeML
+  Open RAIL++-M; Flux.1 dev / Flux.2 dev — FLUX Non-Commercial License (schnell — Apache-2.0); Z-Image, Qwen-Image,
+  MOSS-Image — Apache-2.0; HiDream — MIT; SD3.5 — Stability AI Community License. Проверяйте лицензию каждой модели.

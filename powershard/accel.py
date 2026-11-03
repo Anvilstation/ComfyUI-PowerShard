@@ -20,7 +20,9 @@ import math
 # --------------------------------------------------------------------------- host
 HOST_SAFE_MODULES = ("comfy_extras.nodes_easycache", "comfy.context_windows")
 HOST_SAFE_MODEL_OPTIONS = ("sampler_post_cfg_function", "sampler_pre_cfg_function", "sampler_cfg_function",
-                           "disable_cfg1_optimization", "context_handler")
+                           "disable_cfg1_optimization", "context_handler",
+                           # Skip Layer Guidance (Simple): host вызывает модель дважды; пропуск блоков — см. image_adapter
+                           "sampler_calc_cond_batch_function")
 HOST_ONLY_TRANSFORMER_KEYS = ("easycache", "context_window", "powershard_block_cache", "powershard_nag",
                               "powershard_riflex")
 
@@ -88,29 +90,38 @@ def call_key(transformer_options, shapes, extra=()):
 class BlockCacheHolder:
     """PowerShard Block Cache (FBCache/TeaCache-подобный пропуск блоков в workers)."""
 
-    def __init__(self, threshold, sigma_start, sigma_end, max_skips, warmup_steps):
+    def __init__(self, threshold, sigma_start, sigma_end, max_skips, warmup_steps, max_cache_mb=1024):
         self.threshold, self.sigma_start, self.sigma_end = float(threshold), float(sigma_start), float(sigma_end)
         self.max_skips, self.warmup_steps = int(max_skips), int(warmup_steps)
+        self.max_cache_mb = int(max_cache_mb)
         self.last_sigma = None
         self.steps = 0
         self.run_index = 0
 
     def clone(self):
-        return BlockCacheHolder(self.threshold, self.sigma_start, self.sigma_end, self.max_skips, self.warmup_steps)
+        return BlockCacheHolder(self.threshold, self.sigma_start, self.sigma_end, self.max_skips, self.warmup_steps,
+                                self.max_cache_mb)
 
-    def spec(self, transformer_options, timestep, shapes, extra=()):
+    def begin_run(self):
+        """Начало sampling (outer_sample): новая задача/стадия не наследует счётчики прошлой."""
+        self.last_sigma = None
+        self.steps = 0
+
+    def spec(self, transformer_options, timestep, shapes, extra=(), scope=""):
         sigma = current_sigma(transformer_options, timestep)
-        reset = False
         if sigma is not None:
             if self.last_sigma is None or sigma > self.last_sigma + 1e-6:
-                reset, self.steps = True, 0       # новый sampling pass (или 2-я стадия pipeline)
+                self.steps = 0                     # новый sampling pass (или 2-я стадия pipeline)
                 self.run_index += 1
             elif sigma < self.last_sigma - 1e-6:
                 self.steps += 1
             self.last_sigma = sigma
         active = sigma is None or (self.sigma_end <= sigma <= self.sigma_start)
+        # scope (эксперт MoE и т.п.) входит в префикс: записи другого прохода/эксперта workers удаляют сразу.
+        prefix = f"{self.run_index}|{scope}|"
         return dict(active=bool(active and self.steps >= self.warmup_steps), threshold=self.threshold,
-                    max_skips=self.max_skips, reset=reset, key=f"{self.run_index}|" + call_key(transformer_options, shapes, extra))
+                    max_skips=self.max_skips, prefix=prefix, max_bytes=self.max_cache_mb << 20,
+                    key=prefix + call_key(transformer_options, shapes, extra))
 
 
 class NAGHolder:
@@ -146,34 +157,43 @@ def install_holder(patcher, key, holder):
 
 # ------------------------------------------------------------------------- worker
 class FirstBlockCache:
-    """Кэш residual блоков 1..N для текущей задачи (очищается end_run).
+    """Кэш residual блоков 1..N для текущей задачи (очищается end_run/idle).
 
-    entries[key] = dict(r1=[residual блока 0 по потокам], residual=[x_N - x_1 по потокам], skips)
+    entries[key] = dict(r1=[residual блока 0 по потокам], residual=[x_N - x_1 по потокам], skips, bytes).
+    Записи прошлых проходов/экспертов удаляются при первом же вызове нового прохода (даже неактивном),
+    общий объём ограничен spec["max_bytes"] (LRU) — Context Windows / CFG-части не копят VRAM.
     """
 
     def __init__(self):
         self.entries = {}
-        self.stats = dict(calls=0, skipped=0, computed=0)
+        self.stats = dict(calls=0, skipped=0, computed=0, evicted=0)
 
     def report(self):
-        return dict(self.stats, entries=len(self.entries))
+        return dict(self.stats, entries=len(self.entries), bytes=self.bytes())
+
+    def bytes(self):
+        return sum(e.get("bytes", 0) for e in self.entries.values())
 
     def clear(self):
         self.entries.clear()
-        self.stats = dict(calls=0, skipped=0, computed=0)
+        self.stats = dict(calls=0, skipped=0, computed=0, evicted=0)
+
+    def prune(self, spec):
+        prefix = spec.get("prefix")
+        if prefix and any(not k.startswith(prefix) for k in self.entries):
+            self.entries = {k: v for k, v in self.entries.items() if k.startswith(prefix)}
 
     def decide(self, spec, r1, weights):
         """r1 — список residual блока 0 (локальные строки); weights — множители (1/world для реплицированных)."""
         import torch
         import torch.distributed as dist
         self.stats["calls"] += 1
-        if spec.get("reset"):
-            run = spec["key"].split("|")[0] + "|"  # новый sampling pass: записи прошлых проходов не годятся
-            self.entries = {k: v for k, v in self.entries.items() if k.startswith(run)}
+        self.prune(spec)
         entry = self.entries.get(spec["key"])
         if entry is None or entry["skips"] >= spec["max_skips"] or len(entry["r1"]) != len(r1) \
                 or any(a.shape != b.shape for a, b in zip(entry["r1"], r1)):
             return False, entry
+        self.entries[spec["key"]] = self.entries.pop(spec["key"])  # LRU: недавно использованная
         device = r1[0].device
         sums = torch.zeros(2, dtype=torch.float64, device=device)
         for now, before, w in zip(r1, entry["r1"], weights):
@@ -188,7 +208,25 @@ class FirstBlockCache:
         return rel < spec["threshold"], entry
 
     def store(self, spec, r1, residual):
-        self.entries[spec["key"]] = dict(r1=[t.detach() for t in r1], residual=[t.detach() for t in residual], skips=0)
+        import torch
+        import torch.distributed as dist
+        tensors = [t.detach() for t in r1] + [t.detach() for t in residual]
+        size = sum(t.numel() * t.element_size() for t in tensors)
+        self.entries.pop(spec["key"], None)
+        limit = spec.get("max_bytes")
+        if limit is not None:
+            # Набор записей обязан совпадать на всех rank (decide делает all-reduce только при наличии записи),
+            # а локальные строки у rank разные: размер берётся как максимум по rank — вытеснение одинаковое.
+            if dist.is_initialized() and dist.get_world_size() > 1:
+                value = torch.tensor([float(size)], dtype=torch.float64, device=tensors[0].device)
+                dist.all_reduce(value, op=dist.ReduceOp.MAX)
+                size = int(value.item())
+            while self.entries and self.bytes() + size > limit:
+                self.entries.pop(next(iter(self.entries)))
+                self.stats["evicted"] += 1
+            if size > limit:
+                return
+        self.entries[spec["key"]] = dict(r1=tensors[:len(r1)], residual=tensors[len(r1):], skips=0, bytes=size)
         self.stats["computed"] += 1
 
     def skip(self, entry):

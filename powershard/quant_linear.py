@@ -177,6 +177,14 @@ class QuantLinear(nn.Module):
             if hasattr(src, attr):
                 setattr(self, attr, getattr(src, attr))
 
+    # Родной код моделей ComfyUI вызывает comfy.ops.linear_input_act(linear, x, act): weight=None и
+    # comfy_force_forward направляют его в обычный forward этого модуля (без чтения упакованного веса).
+    comfy_force_forward = True
+
+    @property
+    def weight(self):
+        return None
+
     def extra_repr(self):
         return f"{self.in_features}, {self.out_features}, format={self._ps_qplan.fmt}, native={self._ps_native}"
 
@@ -211,6 +219,8 @@ class QuantLinear(nn.Module):
         elif out is None:
             out = F.linear(rows, qt.dequantize().to(dtype), bias)
         out = out.reshape(shape[:-1] + (self.out_features,))
+        if self._ps_follow_input and x.is_floating_point() and out.dtype != x.dtype:
+            out = out.to(x.dtype)  # text encoder: FP32-граф не сужается native-ядром до bf16
         tracker = getattr(self, "_ps_tracker", None)
         if tracker is not None:
             tracker.observe(self._ps_finite_slot, out)

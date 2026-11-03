@@ -17,6 +17,12 @@ def _stat(folder, name):
     return (str(p), st.st_size, st.st_mtime_ns)
 
 
+def debug_finite_from_env():
+    """Проверка NaN/Inf по блокам (диагностика): POWERSHARD_DEBUG_FINITE=1, без галочки в UI."""
+    import os
+    return os.environ.get("POWERSHARD_DEBUG_FINITE", "0").lower() in ("1", "true", "yes")
+
+
 class PowerShardWanOptions:
     @classmethod
     def INPUT_TYPES(cls):
@@ -24,39 +30,30 @@ class PowerShardWanOptions:
             "fp16_safe": ("BOOLEAN", {"default": False, "tooltip": "Scaled FP16 GEMM (power-of-two, FP32 выход) как H3 Safe. "
                                       "По умолчанию обычный FP16 GEMM: Wan рассчитан на fp16 в ComfyUI; residual/модуляция/нормы всё равно FP32. "
                                       "Включайте при NaN/Inf."}),
-            "debug_finite": ("BOOLEAN", {"default": False}),
             "mlp_chunk_mode": (["off", "auto", "manual"], {"default": "off", "tooltip": "FFN по частям токенов. auto — по свободной VRAM. Для 720p/81 кадров на 16 GB рекомендован auto."}),
-            "mlp_chunk_tokens": ("INT", {"default": 4096, "min": 1, "max": 2147483647}),
-            "moe_residency": (["swap", "both"], {"default": "swap", "tooltip": "swap: неактивный эксперт паркуется в RAM при переключении high->low "
+            "mlp_chunk_tokens": ("INT", {"default": 4096, "min": 1, "max": 2147483647, "tooltip": "Только для mlp_chunk_mode=manual."}),
+            "moe_residency": (["swap", "both"], {"default": "swap", "tooltip": "Только MoE A14B. swap: неактивный эксперт паркуется в RAM при переключении high->low "
                                                  "(раз за прогон; при placement=cpu это лишь reshard). both: оба эксперта активны — при placement=gpu "
                                                  "это ~9.5 GB весов на каждую V100 и мало места для активаций."}),
             "batch_chunk": ("INT", {"default": 0, "min": 0, "max": 64, "tooltip": "0: CFG cond+uncond одним forward. 1: последовательно внутри worker (меньше активаций, веса собираются дважды)."}),
             "model_type": (["auto", "animate2"], {"default": "auto", "tooltip": "auto — по весам/metadata checkpoint. animate2 — Wan-Animate-2: "
-                           "его checkpoint имеет форму Wan2.1 I2V и без metadata неотличим по весам."})},
-                "optional": {"weight_format": (["dequantize", "as_file", "int8", "fp8", "mxfp8", "nvfp4", "int4"], {"default": "dequantize", "tooltip":
-                             "Как хранить Linear-веса блоков в VRAM/RAM. dequantize — fp16/bf16 (как раньше). as_file — в формате "
-                             "файла (int8/fp8/nvfp4/mxfp8/int4 остаются упакованными, bf16-слои — bf16). int8/fp8/mxfp8/nvfp4/int4 — "
-                             "квантовать при загрузке (bf16/fp16 файл тоже). Экономит VRAM и трафик FSDP в 2–4 раза."}),
-                             "compute": (["auto", "native", "dequantize"], {"default": "auto", "tooltip":
-                             "Как считать квантованные слои. native — низкобитные ядра comfy-kitchen (int8/int4: sm75+, fp8: sm89+, "
-                             "nvfp4/mxfp8: sm100+/RTX 50; CUDA backend comfy-kitchen = torch cu130+). dequantize — вес распаковывается "
-                             "в fp16/bf16 на время GEMM (работает везде, в т.ч. V100). auto — native, если GPU и backend умеют формат."}),
-                             "weight_dtype": (["auto", "fp16", "bf16"], {"default": "auto", "tooltip": "Хранение/GEMM весов в workers. auto: bf16 на "
-                             "RTX 30/40/50, A100/H100 (sm80+), fp16 на V100/T4. Любой формат файла (bf16/fp16/fp8/int8/nvfp4/"
-                             "mxfp8/int4) деквантуется в этот dtype по локальным строкам."})}}
+                           "его checkpoint имеет форму Wan2.1 I2V и без metadata неотличим по весам."})}}
     RETURN_TYPES = ("WAN_OPTIONS",)
     FUNCTION = "create"
     CATEGORY = CATEGORY
 
-    def create(self, fp16_safe=False, debug_finite=False, mlp_chunk_mode="off", mlp_chunk_tokens=4096,
-               moe_residency="swap", batch_chunk=0, model_type="auto", weight_dtype="auto", weight_format="dequantize",
-               compute="auto"):
+    def create(self, fp16_safe=False, mlp_chunk_mode="off", mlp_chunk_tokens=4096, moe_residency="swap", batch_chunk=0,
+               model_type="auto"):
         from .wan_config import WanOptions
-        return (WanOptions(fp16_safe, debug_finite, mlp_chunk_mode, mlp_chunk_tokens, moe_residency, batch_chunk,
-                           model_type, weight_dtype, weight_format, compute),)
+        return (WanOptions(fp16_safe=fp16_safe, debug_finite=debug_finite_from_env(), mlp_chunk_mode=mlp_chunk_mode,
+                           mlp_chunk_tokens=mlp_chunk_tokens, moe_residency=moe_residency, batch_chunk=batch_chunk,
+                           model_type=model_type),)
 
 
 class PowerShardWanLoRA:
+    """Устарело: используйте «PowerShard: LoRA» (тот же тип POWERSHARD_LORA). Оставлено для старых workflows."""
+    DEPRECATED = True
+
     @classmethod
     def INPUT_TYPES(cls):
         import folder_paths
@@ -64,8 +61,8 @@ class PowerShardWanLoRA:
                              "strength": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01}),
                              "apply_to": (["all", "high_noise", "low_noise"], {"default": "all",
                                           "tooltip": "Для MoE A14B: к какому эксперту. Lightning/lightx2v обычно имеют отдельные high/low файлы."})},
-                "optional": {"lora": ("WAN_LORA",)}}
-    RETURN_TYPES = ("WAN_LORA",)
+                "optional": {"lora": ("POWERSHARD_LORA",)}}
+    RETURN_TYPES = ("POWERSHARD_LORA",)
     FUNCTION = "add"
     CATEGORY = CATEGORY
 
@@ -80,9 +77,12 @@ class PowerShardWanLoRA:
         return (_stat("loras", lora_name), strength, apply_to, repr(lora))
 
 
-def _options(options):
+def _options(options, weights=None):
+    from .common_nodes import apply_weights
     from .wan_config import WanOptions
-    return options if options is not None else WanOptions()
+    if options is None:
+        options = WanOptions(debug_finite=debug_finite_from_env())
+    return apply_weights(options, weights)
 
 
 class PowerShardWanLoader:
@@ -93,24 +93,25 @@ class PowerShardWanLoader:
         return {"required": {"checkpoint": (folder_paths.get_filename_list("diffusion_models"),),
                              "config": ("POWERSHARD_CONFIG",)},
                 "optional": {"keep_in_memory": ("BOOLEAN", {"default": True}),
-                             "options": ("WAN_OPTIONS",), "lora": ("WAN_LORA",)}}
+                             "options": ("WAN_OPTIONS",), "weights": ("POWERSHARD_WEIGHTS",), "lora": ("POWERSHARD_LORA",)}}
     RETURN_TYPES = ("MODEL",)
     FUNCTION = "load"
     CATEGORY = CATEGORY
 
-    def load(self, checkpoint, config, keep_in_memory=True, options=None, lora=None):
+    def load(self, checkpoint, config, keep_in_memory=True, options=None, weights=None, lora=None):
         from dataclasses import replace
         import folder_paths
         from .wan_adapter import load_wan
         path = folder_paths.get_full_path_or_raise("diffusion_models", checkpoint)
         config = replace(config, release_after_sampling=not keep_in_memory)
-        base = load_wan({"main": str(path)}, config, _options(options), tuple(lora or ()), _report_dir())
+        base = load_wan({"main": str(path)}, config, _options(options, weights), tuple(lora or ()), _report_dir())
         return (base.with_expert("main"),)
 
     @classmethod
-    def IS_CHANGED(cls, checkpoint, config, keep_in_memory=True, options=None, lora=None):
+    def IS_CHANGED(cls, checkpoint, config, keep_in_memory=True, options=None, weights=None, lora=None):
         from .web_api import provider_stamp
-        return (_stat("diffusion_models", checkpoint), repr(config), keep_in_memory, repr(options), repr(lora), provider_stamp())
+        return (_stat("diffusion_models", checkpoint), repr(config), keep_in_memory, repr(options), repr(weights),
+                repr(lora), provider_stamp())
 
 
 class PowerShardWan22MoELoader:
@@ -121,17 +122,18 @@ class PowerShardWan22MoELoader:
         models = folder_paths.get_filename_list("diffusion_models")
         return {"required": {"high_noise_checkpoint": (models,), "low_noise_checkpoint": (models,),
                              "config": ("POWERSHARD_CONFIG",),
-                             "boundary": ("FLOAT", {"default": 0.875, "min": 0.0, "max": 1.0, "step": 0.005,
-                                          "tooltip": "Только для выхода moe: high пока timestep >= boundary*1000. Wan 2.2: T2V 0.875, I2V 0.900."})},
+                             "boundary": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.005,
+                                          "tooltip": "Только для выхода moe: high пока timestep >= boundary*1000. 0 = авто по "
+                                                     "checkpoint (Wan 2.2 T2V 0.875, I2V 0.900)."})},
                 "optional": {"keep_in_memory": ("BOOLEAN", {"default": True}),
-                             "options": ("WAN_OPTIONS",), "lora": ("WAN_LORA",)}}
+                             "options": ("WAN_OPTIONS",), "weights": ("POWERSHARD_WEIGHTS",), "lora": ("POWERSHARD_LORA",)}}
     RETURN_TYPES = ("MODEL", "MODEL", "MODEL")
     RETURN_NAMES = ("high_noise", "low_noise", "moe")
     FUNCTION = "load"
     CATEGORY = CATEGORY
 
-    def load(self, high_noise_checkpoint, low_noise_checkpoint, config, boundary=0.875, keep_in_memory=True,
-             options=None, lora=None):
+    def load(self, high_noise_checkpoint, low_noise_checkpoint, config, boundary=0.0, keep_in_memory=True,
+             options=None, weights=None, lora=None):
         from dataclasses import replace
         import folder_paths
         from .wan_adapter import load_wan
@@ -140,62 +142,15 @@ class PowerShardWan22MoELoader:
         experts = {"high": str(folder_paths.get_full_path_or_raise("diffusion_models", high_noise_checkpoint)),
                    "low": str(folder_paths.get_full_path_or_raise("diffusion_models", low_noise_checkpoint))}
         config = replace(config, release_after_sampling=not keep_in_memory)
-        base = load_wan(experts, config, _options(options), tuple(lora or ()), _report_dir(), boundary)
-        return (base.with_expert("high"), base.with_expert("low"), base.with_expert("moe", boundary))
+        base = load_wan(experts, config, _options(options, weights), tuple(lora or ()), _report_dir(), boundary)
+        return (base.with_expert("high"), base.with_expert("low"), base.with_expert("moe", base.powershard_wan_boundary))
 
     @classmethod
-    def IS_CHANGED(cls, high_noise_checkpoint, low_noise_checkpoint, config, boundary=0.875, keep_in_memory=True,
-                   options=None, lora=None):
+    def IS_CHANGED(cls, high_noise_checkpoint, low_noise_checkpoint, config, boundary=0.0, keep_in_memory=True,
+                   options=None, weights=None, lora=None):
         from .web_api import provider_stamp
         return (_stat("diffusion_models", high_noise_checkpoint), _stat("diffusion_models", low_noise_checkpoint),
-                repr(config), boundary, keep_in_memory, repr(options), repr(lora), provider_stamp())
-
-
-class PowerShardWanTextEncoder:
-    """umT5-XXL для Wan. cpu_fp32 — точный FP32 на POWER9 (≈23 GB RAM), не занимает V100."""
-    @classmethod
-    def INPUT_TYPES(cls):
-        import folder_paths
-        return {"required": {"checkpoint": (folder_paths.get_filename_list("text_encoders"),),
-                             "placement": (["cpu_fp32", "native_offload"], {"default": "cpu_fp32"})}}
-    RETURN_TYPES = ("CLIP",)
-    FUNCTION = "load"
-    CATEGORY = CATEGORY
-
-    def load(self, checkpoint, placement="cpu_fp32"):
-        import torch
-        import comfy.sd
-        import folder_paths
-        options = ({"load_device": torch.device("cpu"), "offload_device": torch.device("cpu"), "dtype": torch.float32}
-                   if placement == "cpu_fp32" else {})
-        clip = comfy.sd.load_clip([folder_paths.get_full_path_or_raise("text_encoders", checkpoint)],
-                                  embedding_directory=folder_paths.get_folder_paths("embeddings"),
-                                  clip_type=comfy.sd.CLIPType.WAN, model_options=options)
-        return (clip,)
-
-
-class PowerShardWanInfo:
-    """Геометрия/формат checkpoint без загрузки весов: dim, heads, семейство, fp8/bf16."""
-    @classmethod
-    def INPUT_TYPES(cls):
-        import folder_paths
-        return {"required": {"checkpoint": (folder_paths.get_filename_list("diffusion_models"),),
-                             "gpu_count": ("INT", {"default": 6, "min": 1, "max": 64})}}
-    RETURN_TYPES = ("STRING",)
-    FUNCTION = "inspect"
-    CATEGORY = CATEGORY
-    OUTPUT_NODE = True
-
-    def inspect(self, checkpoint, gpu_count=6):
-        import json
-        import folder_paths
-        from .wan_config import WanCheckpoint, describe_family, memory_plan
-        ckpt = WanCheckpoint(folder_paths.get_full_path_or_raise("diffusion_models", checkpoint))
-        geometry = ckpt.model_config()
-        value = json.dumps(dict(family=describe_family(geometry), geometry=geometry, storage=ckpt.storage(),
-                                key_prefix=ckpt.prefix, memory=memory_plan(ckpt, gpu_count)),
-                           indent=2, ensure_ascii=False, default=str)
-        return {"ui": {"text": [value]}, "result": (value,)}
+                repr(config), boundary, keep_in_memory, repr(options), repr(weights), repr(lora), provider_stamp())
 
 
 class PowerShardWanUni3C:
@@ -348,34 +303,6 @@ class PowerShardWanInfiniteTalk:
         return _stat("model_patches", model_patch)
 
 
-class PowerShardWanT5Distributed:
-    """umT5-XXL в пуле PowerShard workers: веса шардируются по GPU выбранного config, а не ложатся на cuda:0."""
-    @classmethod
-    def INPUT_TYPES(cls):
-        import folder_paths
-        return {"required": {"checkpoint": (folder_paths.get_filename_list("text_encoders"),),
-                             "config": ("POWERSHARD_CONFIG", {"tooltip": "Тот же PowerShardConfig, что у генератора (GPU, placement). "
-                                                                         "precision для энкодера всегда fp16 storage / FP32 вычисление."}),
-                             "after_encode": (["release", "release_now", "keep_ram"], {"default": "release", "tooltip":
-                                              "release: workers энкодера живут, пока кодируются промпты этого запуска, и закрываются при "
-                                              "старте генератора PowerShard / Free VRAM. release_now: закрыть сразу после каждого encode. "
-                                              "keep_ram: shards остаются в pinned RAM (weight_placement=cpu). Одинаковый текст всегда "
-                                              "берётся из кэша без запуска workers."})}}
-    RETURN_TYPES = ("CLIP",)
-    FUNCTION = "load"
-    CATEGORY = CATEGORY
-
-    def load(self, checkpoint, config, after_encode="release"):
-        import folder_paths
-        from .wan_text import load_wan_t5
-        path = folder_paths.get_full_path_or_raise("text_encoders", checkpoint)
-        return (load_wan_t5(path, config, after_encode, _report_dir(), folder_paths.get_folder_paths("embeddings")),)
-
-    @classmethod
-    def IS_CHANGED(cls, checkpoint, config, after_encode="release"):
-        return (_stat("text_encoders", checkpoint), repr(config), after_encode)
-
-
 class PowerShardFreeVRAM:
     """Выгрузить host-модели (text encoder, CLIP vision, VAE) из VRAM перед sampling.
 
@@ -389,18 +316,18 @@ class PowerShardFreeVRAM:
                              "mode": (["selected", "all_native"], {"default": "selected", "tooltip":
                                       "selected: только подключённые clip/clip_vision/vae. all_native: все native модели ComfyUI "
                                       "(PowerShard-модели не трогаются)."})},
-                "optional": {"clip": ("CLIP",), "clip_vision": ("CLIP_VISION",), "vae": ("VAE",), "latent": ("LATENT",)}}
+                "optional": {"clip": ("CLIP",), "clip_vision": ("CLIP_VISION",), "vae": ("VAE",),
+                             "latent": ("LATENT", {"tooltip": "Сквозной LATENT: выход latent используйте, только если вход подключён"})}}
     RETURN_TYPES = ("CONDITIONING", "CONDITIONING", "LATENT", "STRING")
     RETURN_NAMES = ("positive", "negative", "latent", "report")
     FUNCTION = "free"
-    CATEGORY = CATEGORY
+    CATEGORY = "PowerShard"
 
     def free(self, positive, negative, mode="selected", clip=None, clip_vision=None, vae=None, latent=None):
         import json
         from .wan_free import free_host_models
         report = free_host_models(mode, [m for m in (clip, clip_vision, vae) if m is not None])
         return (positive, negative, latent, json.dumps(report, ensure_ascii=False, indent=1))
-
 
 
 class PowerShardWanAnimate2Cache:
@@ -434,11 +361,8 @@ WAN_NODE_CLASS_MAPPINGS = {
     "PowerShardWanLoRA": PowerShardWanLoRA,
     "PowerShardWanLoader": PowerShardWanLoader,
     "PowerShardWan22MoELoader": PowerShardWan22MoELoader,
-    "PowerShardWanTextEncoder": PowerShardWanTextEncoder,
-    "PowerShardWanInfo": PowerShardWanInfo,
     "PowerShardWanUni3C": PowerShardWanUni3C,
     "PowerShardWanInfiniteTalk": PowerShardWanInfiniteTalk,
-    "PowerShardWanT5Distributed": PowerShardWanT5Distributed,
     "PowerShardFreeVRAM": PowerShardFreeVRAM,
     "PowerShardWanAnimate2Cache": PowerShardWanAnimate2Cache,
 }
@@ -447,11 +371,8 @@ WAN_NODE_DISPLAY_NAME_MAPPINGS = {
     "PowerShardWanLoRA": "PowerShard Wan: LoRA (слияние в shards)",
     "PowerShardWanLoader": "PowerShard Wan: Sequence Loader (одна модель)",
     "PowerShardWan22MoELoader": "PowerShard Wan 2.2: MoE Loader (high+low)",
-    "PowerShardWanTextEncoder": "PowerShard Wan: umT5 Text Encoder",
-    "PowerShardWanInfo": "PowerShard Wan: checkpoint info",
     "PowerShardWanUni3C": "PowerShard Wan: Uni3C ControlNet",
     "PowerShardWanInfiniteTalk": "PowerShard Wan: InfiniteTalk / MultiTalk",
-    "PowerShardWanT5Distributed": "PowerShard Wan: umT5 Distributed Encoder",
     "PowerShardFreeVRAM": "PowerShard: Free VRAM (text encoder / CLIP vision / VAE)",
     "PowerShardWanAnimate2Cache": "PowerShard Wan: Animate2 Cache (RAM workers)",
 }

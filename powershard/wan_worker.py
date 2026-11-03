@@ -86,7 +86,7 @@ def main():
         patch = H3PatchConfig(**settings.get("patch", {}))
         role_options = settings.get("role_options", {})
         kind = role_options.get("kind")
-        options = WanOptions(**role_options.get("options", {})) if kind not in ("ltx", "native_te", "h3q") else None
+        options = WanOptions(**role_options.get("options", {})) if kind not in ("ltx", "native_te", "h3q", "image") else None
         locality = configure_worker_affinity(settings["gpu_uuids"][rank], config.numa_policy)
         import torch
         import torch.distributed as dist
@@ -101,6 +101,7 @@ def main():
         # Scaled Safe GEMM ограничивает суммы; в быстром режиме это тот же default,
         # что у PyTorch/ComfyUI. Full-half accumulation остаётся выключенной.
         configure_matmul(True)
+        check_fp16_accumulation = apply_fp16_accumulation(role_options, rank)
         managed_pool = None
         if config.weight_placement == "ats":
             from .ats_memory import ManagedShardPool
@@ -112,7 +113,7 @@ def main():
             raise RuntimeError("NCCL backend отсутствует в PyTorch")
         dist.init_process_group("nccl", rank=rank, world_size=world,
                                 init_method=Path(settings["session_dir"], "nccl-store").as_uri(),
-                                timeout=timedelta(days=365), device_id=device)
+                                timeout=timedelta(minutes=nccl_timeout_minutes()), device_id=device)
         check = collectives(device)
         from .validation import distributed_probe
         check["fsdp"] = distributed_probe(device, cpu_offload=config.cpu_offload, pin_memory=config.pin_memory,
@@ -121,6 +122,7 @@ def main():
         if managed_pool is not None:
             check["ats"] = managed_pool.report()
         check["locality"] = locality
+        check["fp16_accumulation"] = check_fp16_accumulation
         backend = None
         if not settings["probe_only"]:
             sys.path.insert(0, settings["comfy_path"])
@@ -174,7 +176,7 @@ def main():
             backend = ResidentBackend(make_h3(None, managed_pool), make_h3, device)
             live = backend._backend
             check["role"] = "h3"
-            check["experts"] = {"main": dict(identity=live.identity, lora=[])}
+            check["experts"] = {"main": dict(identity=live.identity, lora=live.lora_report)}
             check["attention"] = live.attention.report()
             check["load_s"] = time.perf_counter() - start
             check["load_timing"] = {"main": live.load_timing}
@@ -218,6 +220,35 @@ def main():
             check["patch_fingerprint"] = patch.fingerprint()
             check["wan_fingerprints"] = {"te": backend._backend.patch_fingerprint}
             print(json.dumps({"rank": rank, "role": "native_te", "world_size": world, "encoder": backend._backend.identity,
+                              "shard_bytes": check["shard_bytes"], "load_s": round(check["load_s"], 2),
+                              "load_timing": check["load_timing"]}, ensure_ascii=False, default=str), file=sys.stderr)
+        elif not settings["probe_only"] and kind == "image":
+            from .image_backend import ImageBackend
+
+            def make_image(local_state, initial_pool=None):
+                pool = initial_pool
+                if config.weight_placement == "ats" and pool is None:
+                    from .ats_memory import ManagedShardPool
+                    pool = ManagedShardPool(device)
+                return ImageBackend(experts["main"], config, device, role_options, pool, local_state)
+            backend = ResidentBackend(make_image(None, managed_pool), make_image, device)
+            live = backend._backend
+            check["role"] = "image"
+            check["quantization"] = live.quant_report
+            check["experts"] = {"main": dict(identity=live.identity, lora=live.lora_report)}
+            check["attention"] = {"policy": settings["attention_policy"], "effective_used": "comfy_native"}
+            check["load_s"] = time.perf_counter() - start
+            check["load_timing"] = {"main": live.load_timing}
+            check["config"] = config.to_dict()
+            check["torch"] = torch.__version__
+            check["compute_capability"] = cap
+            check["loaded_memory"] = {"main": live.loaded_memory}
+            check["shard_bytes"] = {"main": live.shard_bytes}
+            check["cpu_memory"] = process_memory()
+            check["patch_fingerprint"] = patch.fingerprint()
+            check["wan_fingerprints"] = {"main": live.patch_fingerprint}
+            print(json.dumps({"rank": rank, "GPU": torch.cuda.get_device_name(rank), "role": "image",
+                              "model": live.identity, "world_size": world, "weight_placement": config.weight_placement,
                               "shard_bytes": check["shard_bytes"], "load_s": round(check["load_s"], 2),
                               "load_timing": check["load_timing"]}, ensure_ascii=False, default=str), file=sys.stderr)
         elif not settings["probe_only"] and kind == "ltx":
@@ -345,12 +376,18 @@ def main():
                               "weight_placement": config.weight_placement, "prefetch_blocks": config.prefetch_blocks,
                               "shard_bytes": check["shard_bytes"], "load_s": round(check["load_s"], 2),
                               "load_timing": check["load_timing"]}, ensure_ascii=False), file=sys.stderr)
+        # Не держать ссылку на первый backend: ResidentBackend при парковке (keep_in_memory) отпускает модель,
+        # и VRAM освобождается только если других ссылок нет. Иначе после парковки старые shards оставались на
+        # GPU, а восстановление из RAM выделяло вторую копию -> CUDA OOM на второй задаче.
+        live = None
         from .diagnostics import loaded_nccl
         check["loaded_nccl"] = loaded_nccl()
         check["uuid"] = str(getattr(torch.cuda.get_device_properties(rank), "uuid", "unknown"))
         check["rank_mapping"] = settings.get("selected_devices", [])
         check["world_size"] = world
         respond({"sequence": 0, "preflight": check})
+        from . import cancel as step_cancel
+        step_cancel.configure(settings["session_dir"], device)
         expected = 1
         stage_cache = {"dir": None, "tensors": {}}
         from .telemetry import RequestProgress
@@ -402,7 +439,19 @@ def main():
                 metrics["kernels"] = profiler_summary(prof)
                 profiled[req["command"]] = profiled.get(req["command"], 0) + 1
             else:
-                result, metrics = backend.call(req["command"], payload["args"], payload["kwargs"])
+                step_cancel.begin(req["sequence"])
+                try:
+                    result, metrics = backend.call(req["command"], payload["args"], payload["kwargs"])
+                except step_cancel.StepCancelled:
+                    # Все rank вышли на одном блоке; FSDP units уже решардированы в finally backend.call.
+                    del payload
+                    progress("status", "CANCELLED")
+                    torch.cuda.synchronize(device)
+                    torch.cuda.empty_cache()
+                    respond({"sequence": req["sequence"], "cancelled": True, "metrics": {"memory": {}}})
+                    continue
+                finally:
+                    step_cancel.end()
             metrics["input_transfer_s"] = transfer_s
             progress("forward_s", metrics["forward_s"])
             progress("memory", metrics["memory"])
@@ -428,12 +477,49 @@ def main():
             progress("error", error[-4000:])
             progress("status", "FAILED")
         print(error, file=sys.stderr)
-        respond({"error": error})
-        return 1
+        try:
+            respond({"error": error})
+        except (BrokenPipeError, OSError, ValueError):
+            pass
+        sys.stderr.flush()
+        # Остальные ranks могут ждать этот rank в коллективе: destroy_process_group() здесь способен зависнуть
+        # навсегда, удерживая VRAM. Выходим сразу; драйвер освобождает память процесса, host останавливает остальных.
+        os._exit(1)
     finally:
         if "dist" in locals() and dist.is_initialized():
             dist.destroy_process_group()
     return 0
+
+
+def apply_fp16_accumulation(role_options, rank):
+    """cuBLAS fp16 accumulate для fp16 GEMM этого процесса (configure_matmul его выключает по умолчанию).
+
+    Выигрыш — только на GPU, где fp16 tensor cores с FP32-накоплением урезаны вдвое (GeForce RTX 30/40/50);
+    на Tesla V100 / A100 / H100 скорость та же, теряется лишь точность длинных сумм. bf16 GEMM не затрагивает.
+    """
+    import torch
+    wanted = bool((role_options.get("options") or {}).get("fp16_accumulation", False))
+    matmul = torch.backends.cuda.matmul
+    if not wanted:
+        return dict(enabled=False)
+    if not hasattr(matmul, "allow_fp16_accumulation"):
+        print("WARNING: fp16_accumulation: эта сборка torch не поддерживает (нужен torch 2.7+)", file=sys.stderr)
+        return dict(enabled=False, reason="torch без allow_fp16_accumulation")
+    matmul.allow_fp16_accumulation = True
+    name = torch.cuda.get_device_name()
+    datacenter = any(tag in name for tag in ("V100", "A100", "H100", "H200", "B200", "A800", "H800", "L40", "A40"))
+    if datacenter and rank == 0:
+        print(f"WARNING: fp16_accumulation на {name}: скорость fp16 GEMM не изменится (полноскоростное FP32-накопление "
+              "у этой карты), снизится только точность — выключите", file=sys.stderr)
+    return dict(enabled=True, gpu=name, expected_gain=not datacenter)
+
+
+def nccl_timeout_minutes():
+    """Срок коллективов NCCL (watchdog завершает зависший rank). Длинные шаги не мешают: срок — на одну операцию."""
+    try:
+        return max(1., float(os.environ.get("POWERSHARD_NCCL_TIMEOUT_MIN", "60")))
+    except ValueError:
+        return 60.
 
 
 if __name__ == "__main__":

@@ -201,7 +201,7 @@ def release_text_encoder(session, policy):
     """
     if not session.running:
         return
-    if policy == "keep_ram" and session.config.cpu_offload:
+    if policy == "keep_ram":
         session.idle()
     else:
         session.close()
@@ -236,8 +236,7 @@ def _patcher_class():
                 raise ValueError("umT5 distributed: model_options patches не переносятся в workers")
 
         def add_patches(self, patches, *args, **kwargs):
-            if patches:
-                raise ValueError("LoRA для umT5 в PowerShard не реализована (Wan LoRA к text encoder не применяются)")
+            # Native LoraLoader передаёт сюда и ключи диффузионной модели: берём только свои (весов на host нет).
             return []
 
         def clone(self, *args, **kwargs):
@@ -321,10 +320,10 @@ def load_wan_t5(path, config, after_encode="release", report_dir=None, embedding
     check_umt5_geometry(ckpt.model_config())
     if after_encode not in ("release", "release_now", "keep_ram"):
         raise ValueError("after_encode: release / release_now / keep_ram")
-    if after_encode == "keep_ram" and not config.cpu_offload:
-        raise ValueError("after_encode=keep_ram требует weight_placement=cpu (shards в pinned RAM)")
     # Энкодер не участвует в LoRA/precision генератора: fp16 storage независимо от precision config.
-    config = replace(config, precision="fp16", release_after_sampling=True)
+    # keep_ram: workers живут между задачами, при старте генератора shards паркуются в RAM (session.idle),
+    # следующий encode восстанавливает их без чтения файла (при weight_placement=gpu — копией RAM -> VRAM).
+    config = replace(config, precision="fp16", release_after_sampling=after_encode != "keep_ram")
     tokenizer_data = {}
     with safe_open(str(ckpt.path), framework="pt", device="cpu") as f:
         if "spiece_model" in f.keys():

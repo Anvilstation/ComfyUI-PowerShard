@@ -292,6 +292,8 @@ class WanBackend:
         root.eval().requires_grad_(False)
         self.attention = AttentionDispatcher(config, attention_policy)
         self.tracker, self.sequence = configure_network(net, config, options, self.attention)
+        from .cancel import install_block_hooks
+        install_block_hooks(list(net.blocks))  # Cancel прерывает шаг между блоками (согласованно на всех rank)
         from safetensors import safe_open
         from .quant_linear import install_quant_linears
         self.quant_report = install_quant_linears(
@@ -345,6 +347,8 @@ class WanBackend:
         if not self.config.cpu_offload:
             raise ValueError("Wan CPU retention requires CPUOffloadPolicy")
         before = memory(self.device)
+        self.spectrum.clear()  # Block Cache residuals лежат в VRAM; при CPUOffload idle() не проходит через end_run
+        self.root.network.__dict__.pop("_ps_pose_cache", None)
         for unit in self.units:
             unit.reshard()
         assert_sharded(self.root, True)
@@ -680,6 +684,7 @@ class WanExperts:
         parked = {}
         switch_start = time.perf_counter()
         if self.residency == "swap" and self.active not in (None, slot):
+            self.owners[self.active].end_run()  # записи Block Cache прошлого эксперта больше не нужны
             parked[self.active] = self.owners[self.active].idle()
         switch_s = time.perf_counter() - switch_start
         self.active = slot
@@ -709,11 +714,16 @@ class WanExperts:
         return {slot: owner.end_run() for slot, owner in self.owners.items()}
 
     def idle(self):
+        import gc
+        self.end_run()  # pose cache / Block Cache — до парковки, чтобы они не остались в VRAM
         reports = {slot: owner.idle() for slot, owner in self.owners.items()}
         if self.uni3c_owner is not None:
             reports["uni3c"] = self.uni3c_owner.idle()
         if self.multitalk_owner is not None:
             reports["multitalk"] = self.multitalk_owner.idle()
         self.active = None
+        gc.collect()
+        if self.device.type == "cuda":
+            torch.cuda.empty_cache()
         return dict(after=memory(self.device), experts=reports,
                     cpu_shard_bytes=sum(r.get("cpu_shard_bytes", 0) for r in reports.values()))

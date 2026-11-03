@@ -13,6 +13,7 @@ import comfy.model_detection
 import comfy.model_management
 import comfy.model_patcher
 from .comfy_adapter import PowerShardPatcher
+from .lifecycle import BoundaryPatcherMixin
 from .conditioning_cache import content_hash
 from .host_guard import strip_internal_wrappers
 from .wire import StagedTensor, has_effect, validate_options
@@ -190,7 +191,7 @@ class WanDiffusionProxy(torch.nn.Module):
             extra["_powershard_animate2_cache"] = self.animate2_cache_spec(animate2_cache, dict(kwargs, _context=staged))
         cache = full.get("powershard_block_cache")
         if cache is not None:
-            extra["_powershard_block_cache"] = cache.spec(full, timestep, [tuple(x.shape)], extra=(slot,))
+            extra["_powershard_block_cache"] = cache.spec(full, timestep, [tuple(x.shape)], scope=slot)
         nag = full.get("powershard_nag")
         if nag is not None and nag.active(full, timestep):
             extra["_powershard_nag"] = nag.params()
@@ -249,8 +250,12 @@ def remote_class(base):
     return _REMOTE_CLASSES[base]
 
 
-class WanPatcher(PowerShardPatcher):
+class WanPatcher(BoundaryPatcherMixin, PowerShardPatcher):
     """Наследует wrappers (guard + run boundary) и memory accounting PowerShard."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._install_boundary()
 
     def clone(self, *args, **kwargs):
         # Без clone_structure: clones делят одну модель-proxy -> ComfyUI is_clone().
@@ -340,7 +345,8 @@ class WanPatcher(PowerShardPatcher):
     def cleanup(self):
         comfy.model_patcher.ModelPatcher.cleanup(self)
         session = self.session
-        # high-noise проход MoE: не закрывать workers до low-noise прохода.
+        # high-noise проход MoE: не закрывать workers до low-noise прохода. Если проход прерван (Cancel/ошибка),
+        # finish_sampling() (после этого cleanup) не откладывает освобождение — см. lifecycle.boundary_outer_sample.
         if session.config.release_after_sampling and not session.draining and not session.should_defer():
             session.close()
 
@@ -417,5 +423,8 @@ def load_wan(experts, config, options, loras=(), report_dir=None, boundary=None)
     patcher = WanPatcher(model, torch.device("cuda", int(selected[0]["user_id"])), torch.device("cpu"), size=size)
     patcher.powershard_memory_plan = plan
     if boundary is not None:
+        if float(boundary) <= 0:  # авто: I2V A14B (in_dim 36) переключается на 0.900, T2V — 0.875
+            from .wan_config import MOE_BOUNDARY
+            boundary = MOE_BOUNDARY["i2v" if int(geometry["in_dim"]) == 36 else "t2v"]
         patcher.powershard_wan_boundary = float(boundary)
     return patcher

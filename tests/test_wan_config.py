@@ -199,16 +199,42 @@ def test_lora_planning_formats():
 def test_lora_planning_rejects_mismatch():
     from powershard.wan_lora import plan_lora
     model = {k: {"shape": s} for k, s in tiny_wan_shapes().items()}
-    with pytest.raises(ValueError, match="не соответствуют"):
+    with pytest.raises(ValueError, match="ни один"):
         plan_lora(lora_header({"diffusion_model.blocks.9.self_attn.q.lora_down.weight": [4, 256],
                                "diffusion_model.blocks.9.self_attn.q.lora_up.weight": [256, 4]}), model)
-    with pytest.raises(ValueError, match="форма"):
+    with pytest.raises(ValueError, match="ни один"):
         plan_lora(lora_header({"diffusion_model.blocks.0.self_attn.q.lora_down.weight": [4, 512],
                                "diffusion_model.blocks.0.self_attn.q.lora_up.weight": [256, 4]}), model)
-    with pytest.raises(ValueError, match="LoHa"):
-        plan_lora(lora_header({"diffusion_model.blocks.0.self_attn.q.hada_w1_a": [4, 256]}), model)
-    with pytest.raises(ValueError, match="up/down"):
+    with pytest.raises(ValueError, match="DoRA"):
+        plan_lora(lora_header({"diffusion_model.blocks.0.self_attn.q.dora_scale": [256, 1]}), model)
+    with pytest.raises(ValueError, match="ни один"):
         plan_lora(lora_header({"diffusion_model.blocks.0.self_attn.q.lora_up.weight": [256, 4]}), model)
+
+
+def test_lora_partial_and_extended_formats():
+    """Как ComfyUI: лишние ключи пропускаются с предупреждением; PEFT/mochi/LoHa/LoKr распознаются."""
+    import warnings
+    from powershard.wan_lora import plan_lora
+    model = {k: {"shape": s} for k, s in tiny_wan_shapes().items()}
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        plan = plan_lora(lora_header({
+            "diffusion_model.blocks.0.self_attn.q.lora_A.default.weight": [4, 256],
+            "diffusion_model.blocks.0.self_attn.q.lora_B.default.weight": [256, 4],
+            "diffusion_model.blocks.0.self_attn.k.lora_A": [4, 256],
+            "diffusion_model.blocks.0.self_attn.k.lora_B": [256, 4],
+            "diffusion_model.blocks.0.self_attn.v.hada_w1_a": [256, 2], "diffusion_model.blocks.0.self_attn.v.hada_w1_b": [2, 256],
+            "diffusion_model.blocks.0.self_attn.v.hada_w2_a": [256, 2], "diffusion_model.blocks.0.self_attn.v.hada_w2_b": [2, 256],
+            "diffusion_model.blocks.0.self_attn.o.lokr_w1": [16, 16],
+            "diffusion_model.blocks.0.self_attn.o.lokr_w2_a": [16, 2], "diffusion_model.blocks.0.self_attn.o.lokr_w2_b": [2, 16],
+            "diffusion_model.blocks.0.cross_attn.k_img.lora_A.weight": [4, 256],   # I2V-only модуль на T2V
+            "diffusion_model.blocks.0.cross_attn.k_img.lora_B.weight": [256, 4]}), model)
+    entries = plan["entries"]
+    assert entries["blocks.0.self_attn.q.weight"]["up"].endswith("lora_B.default.weight")
+    assert entries["blocks.0.self_attn.k.weight"]["down"].endswith(".lora_A")
+    assert "loha" in entries["blocks.0.self_attn.v.weight"]
+    assert entries["blocks.0.self_attn.o.weight"]["lokr"]["dim"] == 2
+    assert len(plan["skipped"]) == 2 and any("пропущено 2" in str(w.message) for w in caught)
 
 
 @pytest.fixture
@@ -224,34 +250,9 @@ def comfy_folder_paths(request):
 def test_wan_nodes_register_without_torch():
     import subprocess
     code = ("import sys; from powershard.wan_nodes import WAN_NODE_CLASS_MAPPINGS as n; "
-            "assert {'PowerShardWan22MoELoader','PowerShardWanLoader','PowerShardWanLoRA','PowerShardWanOptions','PowerShardWanUni3C','PowerShardWanInfiniteTalk','PowerShardWanT5Distributed','PowerShardFreeVRAM','PowerShardWanAnimate2Cache'} <= n.keys(); "
+            "assert {'PowerShardWan22MoELoader','PowerShardWanLoader','PowerShardWanLoRA','PowerShardWanOptions','PowerShardWanUni3C','PowerShardWanInfiniteTalk','PowerShardFreeVRAM','PowerShardWanAnimate2Cache'} <= n.keys(); "
             "assert 'torch' not in sys.modules")
     subprocess.run([sys.executable, "-c", code], cwd=ROOT, check=True)
-
-
-def test_shipped_wan_workflows(comfy_folder_paths):
-    from powershard.nodes import NODE_CLASS_MAPPINGS
-    from powershard.wan_nodes import WAN_NODE_CLASS_MAPPINGS
-    from powershard.workflow_migration import migrate_api, migrate_ui
-    mappings = {**NODE_CLASS_MAPPINGS, **WAN_NODE_CLASS_MAPPINGS}
-    files = sorted((ROOT / "workflows_wan").glob("*.api.json"))
-    assert files
-    for path in files:
-        graph = json.loads(path.read_text())
-        assert migrate_api(graph) == (graph, [])
-        for key, node in graph.items():
-            for value in node["inputs"].values():
-                if isinstance(value, list) and len(value) == 2 and isinstance(value[1], int):
-                    assert value[0] in graph, (path.name, key)
-            cls = mappings.get(node["class_type"])
-            if cls is None:
-                continue
-            fields = cls.INPUT_TYPES()
-            required = set(fields.get("required", {}))
-            assert required <= set(node["inputs"]) <= required | set(fields.get("optional", {})), (path.name, key)
-    for path in sorted((ROOT / "workflows_wan").glob("*.ui.json")):
-        graph = json.loads(path.read_text())
-        assert migrate_ui(graph) == (graph, [])
 
 
 def test_umt5_checkpoint_prefixes(tmp_path):

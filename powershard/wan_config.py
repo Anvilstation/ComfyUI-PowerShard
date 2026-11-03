@@ -11,7 +11,7 @@ import math
 from pathlib import Path
 import struct
 
-DTYPE_BYTES = {"BOOL": 1, "U8": 1, "I8": 1, "F8_E4M3": 1, "F8_E5M2": 1, "I16": 2, "U16": 2,
+DTYPE_BYTES = {"BOOL": 1, "U8": 1, "I8": 1, "F8_E4M3": 1, "F8_E5M2": 1, "F8_E8M0": 1, "I16": 2, "U16": 2,
                "F16": 2, "BF16": 2, "I32": 4, "U32": 4, "F32": 4, "I64": 8, "U64": 8, "F64": 8}
 FP8_DTYPES = ("F8_E4M3", "F8_E5M2")
 FLOAT_DTYPES = ("F16", "BF16", "F32", "F64") + FP8_DTYPES
@@ -398,6 +398,7 @@ class WanOptions:
     weight_dtype: str = "auto"  # auto: bf16 на sm80+ (RTX 30/40/50, A/H100), fp16 на V100/T4; либо fp16 / bf16
     weight_format: str = "dequantize"  # хранение Linear блоков: dequantize / as_file / int8 / fp8 / mxfp8 / nvfp4 / int4
     compute: str = "auto"              # auto / native / dequantize (для квантованного хранения)
+    fp16_accumulation: bool = False    # cuBLAS fp16 accumulate (игровые GPU: до 2x GEMM; V100 — без эффекта)
 
     def __post_init__(self):
         if self.mlp_chunk_mode not in ("off", "auto", "manual"):

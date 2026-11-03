@@ -1,0 +1,1007 @@
+{
+ "last_node_id": 20,
+ "last_link_id": 22,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "PowerShardConfig",
+   "pos": [
+    40,
+    40
+   ],
+   "size": [
+    340,
+    176
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "POWERSHARD_CONFIG",
+     "type": "POWERSHARD_CONFIG",
+     "links": [
+      1,
+      3
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "PowerShardConfig"
+   },
+   "widgets_values": [
+    "all",
+    "gpu",
+    "fp16",
+    "auto",
+    "ulysses"
+   ]
+  },
+  {
+   "id": 2,
+   "type": "PowerShardWeights",
+   "pos": [
+    40,
+    256
+   ],
+   "size": [
+    340,
+    150
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "POWERSHARD_WEIGHTS",
+     "type": "POWERSHARD_WEIGHTS",
+     "links": [
+      2
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "PowerShardWeights"
+   },
+   "widgets_values": [
+    "as_file",
+    "auto",
+    "auto",
+    false
+   ]
+  },
+  {
+   "id": 3,
+   "type": "PowerShardH3QuantLoader",
+   "pos": [
+    420,
+    40
+   ],
+   "size": [
+    340,
+    164
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "config",
+     "type": "POWERSHARD_CONFIG",
+     "link": 1
+    },
+    {
+     "name": "weights",
+     "type": "POWERSHARD_WEIGHTS",
+     "link": 2
+    },
+    {
+     "name": "lora",
+     "type": "POWERSHARD_LORA",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      6,
+      8
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "PowerShardH3QuantLoader"
+   },
+   "widgets_values": [
+    "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+    true
+   ]
+  },
+  {
+   "id": 4,
+   "type": "PowerShardH3QwenLoader",
+   "pos": [
+    420,
+    244
+   ],
+   "size": [
+    340,
+    172
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "config",
+     "type": "POWERSHARD_CONFIG",
+     "link": 3
+    }
+   ],
+   "outputs": [
+    {
+     "name": "CLIP",
+     "type": "CLIP",
+     "links": [
+      4
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "PowerShardH3QwenLoader"
+   },
+   "widgets_values": [
+    "qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
+    "int8_fp16",
+    "release",
+    256
+   ]
+  },
+  {
+   "id": 5,
+   "type": "VAELoader",
+   "pos": [
+    40,
+    446
+   ],
+   "size": [
+    340,
+    72
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "VAE",
+     "type": "VAE",
+     "links": [
+      5,
+      17
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAELoader"
+   },
+   "widgets_values": [
+    "minimax_h3_video_vae_fp16.safetensors"
+   ]
+  },
+  {
+   "id": 6,
+   "type": "VAELoader",
+   "pos": [
+    40,
+    558
+   ],
+   "size": [
+    340,
+    72
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "VAE",
+     "type": "VAE",
+     "links": [
+      19
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAELoader"
+   },
+   "widgets_values": [
+    "minimax_h3_audio_vae_fp32.safetensors"
+   ]
+  },
+  {
+   "id": 7,
+   "type": "MiniMaxH3ImageToVideo",
+   "pos": [
+    800,
+    40
+   ],
+   "size": [
+    340,
+    358
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "clip",
+     "type": "CLIP",
+     "link": 4
+    },
+    {
+     "name": "vae",
+     "type": "VAE",
+     "link": 5
+    },
+    {
+     "name": "first_frame",
+     "type": "IMAGE",
+     "link": null
+    },
+    {
+     "name": "last_frame",
+     "type": "IMAGE",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      7
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      13
+     ],
+     "slot_index": 1
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "MiniMaxH3ImageToVideo"
+   },
+   "widgets_values": [
+    "Waves roll onto a rocky shore at sunset. The camera is static. The sound of the sea and seagulls.",
+    512,
+    512,
+    25
+   ]
+  },
+  {
+   "id": 8,
+   "type": "BasicGuider",
+   "pos": [
+    1180,
+    40
+   ],
+   "size": [
+    340,
+    116
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 6
+    },
+    {
+     "name": "conditioning",
+     "type": "CONDITIONING",
+     "link": 7
+    }
+   ],
+   "outputs": [
+    {
+     "name": "GUIDER",
+     "type": "GUIDER",
+     "links": [
+      10
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "BasicGuider"
+   },
+   "widgets_values": []
+  },
+  {
+   "id": 9,
+   "type": "RandomNoise",
+   "pos": [
+    40,
+    670
+   ],
+   "size": [
+    340,
+    98
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "NOISE",
+     "type": "NOISE",
+     "links": [
+      9
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "RandomNoise"
+   },
+   "widgets_values": [
+    44,
+    "fixed"
+   ]
+  },
+  {
+   "id": 10,
+   "type": "KSamplerSelect",
+   "pos": [
+    40,
+    808
+   ],
+   "size": [
+    340,
+    72
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "SAMPLER",
+     "type": "SAMPLER",
+     "links": [
+      11
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "KSamplerSelect"
+   },
+   "widgets_values": [
+    "euler"
+   ]
+  },
+  {
+   "id": 11,
+   "type": "BasicScheduler",
+   "pos": [
+    800,
+    438
+   ],
+   "size": [
+    340,
+    146
+   ],
+   "flags": {},
+   "order": 10,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 8
+    }
+   ],
+   "outputs": [
+    {
+     "name": "SIGMAS",
+     "type": "SIGMAS",
+     "links": [
+      12
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "BasicScheduler"
+   },
+   "widgets_values": [
+    "simple",
+    8,
+    1.0
+   ]
+  },
+  {
+   "id": 12,
+   "type": "SamplerCustomAdvanced",
+   "pos": [
+    1560,
+    40
+   ],
+   "size": [
+    340,
+    182
+   ],
+   "flags": {},
+   "order": 11,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "noise",
+     "type": "NOISE",
+     "link": 9
+    },
+    {
+     "name": "guider",
+     "type": "GUIDER",
+     "link": 10
+    },
+    {
+     "name": "sampler",
+     "type": "SAMPLER",
+     "link": 11
+    },
+    {
+     "name": "sigmas",
+     "type": "SIGMAS",
+     "link": 12
+    },
+    {
+     "name": "latent_image",
+     "type": "LATENT",
+     "link": 13
+    }
+   ],
+   "outputs": [
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      14
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [],
+     "slot_index": 1
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "SamplerCustomAdvanced"
+   },
+   "widgets_values": []
+  },
+  {
+   "id": 13,
+   "type": "PowerShardRelease",
+   "pos": [
+    1940,
+    40
+   ],
+   "size": [
+    340,
+    146
+   ],
+   "flags": {},
+   "order": 12,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "samples",
+     "type": "LATENT",
+     "link": 14
+    }
+   ],
+   "outputs": [
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      15
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "STRING",
+     "type": "STRING",
+     "links": [],
+     "slot_index": 1
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "PowerShardRelease"
+   },
+   "widgets_values": [
+    true,
+    false,
+    true
+   ]
+  },
+  {
+   "id": 14,
+   "type": "LTXVSeparateAVLatent",
+   "pos": [
+    2320,
+    40
+   ],
+   "size": [
+    340,
+    94
+   ],
+   "flags": {},
+   "order": 13,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "av_latent",
+     "type": "LATENT",
+     "link": 15
+    }
+   ],
+   "outputs": [
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      16
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      18
+     ],
+     "slot_index": 1
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LTXVSeparateAVLatent"
+   },
+   "widgets_values": []
+  },
+  {
+   "id": 15,
+   "type": "VAEDecodeTiled",
+   "pos": [
+    2700,
+    40
+   ],
+   "size": [
+    340,
+    194
+   ],
+   "flags": {},
+   "order": 14,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "samples",
+     "type": "LATENT",
+     "link": 16
+    },
+    {
+     "name": "vae",
+     "type": "VAE",
+     "link": 17
+    }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      20
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAEDecodeTiled"
+   },
+   "widgets_values": [
+    512,
+    64,
+    64,
+    8
+   ]
+  },
+  {
+   "id": 16,
+   "type": "VAEDecodeAudio",
+   "pos": [
+    2700,
+    274
+   ],
+   "size": [
+    340,
+    116
+   ],
+   "flags": {},
+   "order": 15,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "samples",
+     "type": "LATENT",
+     "link": 18
+    },
+    {
+     "name": "vae",
+     "type": "VAE",
+     "link": 19
+    }
+   ],
+   "outputs": [
+    {
+     "name": "AUDIO",
+     "type": "AUDIO",
+     "links": [
+      21
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAEDecodeAudio"
+   },
+   "widgets_values": []
+  },
+  {
+   "id": 17,
+   "type": "CreateVideo",
+   "pos": [
+    3080,
+    40
+   ],
+   "size": [
+    340,
+    194
+   ],
+   "flags": {},
+   "order": 16,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 20
+    },
+    {
+     "name": "audio",
+     "type": "AUDIO",
+     "link": 21
+    }
+   ],
+   "outputs": [
+    {
+     "name": "VIDEO",
+     "type": "VIDEO",
+     "links": [
+      22
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CreateVideo"
+   },
+   "widgets_values": [
+    24.0,
+    "auto",
+    "sRGB",
+    "none"
+   ]
+  },
+  {
+   "id": 18,
+   "type": "SaveVideo",
+   "pos": [
+    3460,
+    40
+   ],
+   "size": [
+    340,
+    146
+   ],
+   "flags": {},
+   "order": 17,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "video",
+     "type": "VIDEO",
+     "link": 22
+    }
+   ],
+   "outputs": [
+    {
+     "name": "VIDEO",
+     "type": "VIDEO",
+     "links": [],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "SaveVideo"
+   },
+   "widgets_values": [
+    "video/minimax_h3_t2va",
+    "auto",
+    "auto"
+   ]
+  },
+  {
+   "id": 19,
+   "type": "Note",
+   "pos": [
+    40,
+    -260
+   ],
+   "size": [
+    760,
+    200
+   ],
+   "flags": {},
+   "order": 18,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {
+    "text": ""
+   },
+   "color": "#432",
+   "bgcolor": "#653",
+   "widgets_values": [
+    "PowerShard: модель шардируется по всем GPU из «GPU / память / attention» (gpu_ids=all, sequence_mode=ulysses). Имена файлов — примеры, выберите свои. Release перед VAE освобождает GPU workers.\nEN: the model is sharded across the GPUs selected in the config node. File names are examples - pick your own. Release frees worker VRAM before VAE decode."
+   ]
+  },
+  {
+   "id": 20,
+   "type": "Note",
+   "pos": [
+    40,
+    -480
+   ],
+   "size": [
+    760,
+    200
+   ],
+   "flags": {},
+   "order": 19,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {
+    "text": ""
+   },
+   "color": "#432",
+   "bgcolor": "#653",
+   "widgets_values": [
+    "MiniMax H3 text-to-video+audio. Веса int8 хранятся как в файле (узел «формат весов»), на V100 GEMM считается через распаковку в fp16. Qwen3-VL 32B — отдельный пул workers, освобождается перед H3.\nEN: int8 weights are kept packed (weights node); Qwen3-VL runs in its own worker pool."
+   ]
+  }
+ ],
+ "links": [
+  [
+   1,
+   1,
+   0,
+   3,
+   0,
+   "POWERSHARD_CONFIG"
+  ],
+  [
+   2,
+   2,
+   0,
+   3,
+   1,
+   "POWERSHARD_WEIGHTS"
+  ],
+  [
+   3,
+   1,
+   0,
+   4,
+   0,
+   "POWERSHARD_CONFIG"
+  ],
+  [
+   4,
+   4,
+   0,
+   7,
+   0,
+   "CLIP"
+  ],
+  [
+   5,
+   5,
+   0,
+   7,
+   1,
+   "VAE"
+  ],
+  [
+   6,
+   3,
+   0,
+   8,
+   0,
+   "MODEL"
+  ],
+  [
+   7,
+   7,
+   0,
+   8,
+   1,
+   "CONDITIONING"
+  ],
+  [
+   8,
+   3,
+   0,
+   11,
+   0,
+   "MODEL"
+  ],
+  [
+   9,
+   9,
+   0,
+   12,
+   0,
+   "NOISE"
+  ],
+  [
+   10,
+   8,
+   0,
+   12,
+   1,
+   "GUIDER"
+  ],
+  [
+   11,
+   10,
+   0,
+   12,
+   2,
+   "SAMPLER"
+  ],
+  [
+   12,
+   11,
+   0,
+   12,
+   3,
+   "SIGMAS"
+  ],
+  [
+   13,
+   7,
+   1,
+   12,
+   4,
+   "LATENT"
+  ],
+  [
+   14,
+   12,
+   0,
+   13,
+   0,
+   "LATENT"
+  ],
+  [
+   15,
+   13,
+   0,
+   14,
+   0,
+   "LATENT"
+  ],
+  [
+   16,
+   14,
+   0,
+   15,
+   0,
+   "LATENT"
+  ],
+  [
+   17,
+   5,
+   0,
+   15,
+   1,
+   "VAE"
+  ],
+  [
+   18,
+   14,
+   1,
+   16,
+   0,
+   "LATENT"
+  ],
+  [
+   19,
+   6,
+   0,
+   16,
+   1,
+   "VAE"
+  ],
+  [
+   20,
+   15,
+   0,
+   17,
+   0,
+   "IMAGE"
+  ],
+  [
+   21,
+   16,
+   0,
+   17,
+   1,
+   "AUDIO"
+  ],
+  [
+   22,
+   17,
+   0,
+   18,
+   0,
+   "VIDEO"
+  ]
+ ],
+ "groups": [],
+ "config": {},
+ "extra": {
+  "ds": {
+   "scale": 0.65,
+   "offset": [
+    40,
+    320
+   ]
+  }
+ },
+ "version": 0.4
+}

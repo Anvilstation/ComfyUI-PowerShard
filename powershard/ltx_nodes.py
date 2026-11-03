@@ -28,57 +28,39 @@ def _choice_stat(choice):
     return _stat(folder, name)
 
 
-QUANT_INPUTS = {
-    "weight_format": (["dequantize", "as_file", "int8", "fp8", "mxfp8", "nvfp4", "int4"], {"default": "dequantize", "tooltip":
-                      "Хранение Linear-весов в workers: dequantize — fp16/bf16; as_file — как в файле (квантованные остаются "
-                      "упакованными); int8/fp8/mxfp8/nvfp4/int4 — квантовать при загрузке."}),
-    "compute": (["auto", "native", "dequantize"], {"default": "auto", "tooltip":
-                "native — низкобитные ядра comfy-kitchen; dequantize — распаковка в fp16/bf16 (FP32 у энкодера) на время "
-                "GEMM; auto — native только если GPU и CUDA backend comfy-kitchen поддерживают формат."})}
-
-
 class PowerShardLTXOptions:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
             "fp16_safe": ("BOOLEAN", {"default": False, "tooltip": "Scaled FP16 GEMM (FP32 выход). LTX обучен в bf16: при NaN/Inf "
                                       "включите. Residual, AdaLN, RMSNorm, RoPE, timestep/caption/коннекторы — всегда FP32."}),
-            "debug_finite": ("BOOLEAN", {"default": False}),
             "mlp_chunk_mode": (["off", "auto", "manual"], {"default": "auto", "tooltip": "FFN по частям токенов (auto — по свободной VRAM)."}),
-            "mlp_chunk_tokens": ("INT", {"default": 4096, "min": 1, "max": 2147483647}),
+            "mlp_chunk_tokens": ("INT", {"default": 4096, "min": 1, "max": 2147483647, "tooltip": "Только для mlp_chunk_mode=manual."}),
             "batch_chunk": ("INT", {"default": 0, "min": 0, "max": 64, "tooltip": "0: весь CFG batch одним forward; 1: по одному."}),
             "attention_chunk": ("INT", {"default": 8192, "min": 256, "max": 1048576, "tooltip":
-                                "Ключей на шаг частичной video->audio attention (FP32 online softmax)."})},
-                "optional": {"weight_format": (["dequantize", "as_file", "int8", "fp8", "mxfp8", "nvfp4", "int4"], {"default": "dequantize", "tooltip":
-                             "Как хранить Linear-веса блоков в VRAM/RAM. dequantize — fp16/bf16 (как раньше). as_file — в формате "
-                             "файла (int8/fp8/nvfp4/mxfp8/int4 остаются упакованными, bf16-слои — bf16). int8/fp8/mxfp8/nvfp4/int4 — "
-                             "квантовать при загрузке (bf16/fp16 файл тоже). Экономит VRAM и трафик FSDP в 2–4 раза."}),
-                             "compute": (["auto", "native", "dequantize"], {"default": "auto", "tooltip":
-                             "Как считать квантованные слои. native — низкобитные ядра comfy-kitchen (int8/int4: sm75+, fp8: sm89+, "
-                             "nvfp4/mxfp8: sm100+/RTX 50; CUDA backend comfy-kitchen = torch cu130+). dequantize — вес распаковывается "
-                             "в fp16/bf16 на время GEMM (работает везде, в т.ч. V100). auto — native, если GPU и backend умеют формат."}),
-                             "weight_dtype": (["auto", "fp16", "bf16"], {"default": "auto", "tooltip": "Хранение/GEMM весов в workers. auto: bf16 на "
-                             "RTX 30/40/50, A100/H100 (sm80+), fp16 на V100/T4. Любой формат файла (bf16/fp16/fp8/int8/nvfp4/"
-                             "mxfp8/int4) деквантуется в этот dtype по локальным строкам."})}}
+                                "Ключей на шаг частичной video->audio attention (FP32 online softmax)."})}}
     RETURN_TYPES = ("LTX_OPTIONS",)
     FUNCTION = "create"
     CATEGORY = CATEGORY
 
-    def create(self, fp16_safe=False, debug_finite=False, mlp_chunk_mode="auto", mlp_chunk_tokens=4096, batch_chunk=0,
-               attention_chunk=8192, weight_dtype="auto", weight_format="dequantize", compute="auto"):
+    def create(self, fp16_safe=False, mlp_chunk_mode="auto", mlp_chunk_tokens=4096, batch_chunk=0, attention_chunk=8192):
         from .ltx_config import LTXOptions
-        return (LTXOptions(fp16_safe, debug_finite, mlp_chunk_mode, mlp_chunk_tokens, batch_chunk, attention_chunk,
-                           weight_dtype, weight_format, compute),)
+        from .wan_nodes import debug_finite_from_env
+        return (LTXOptions(fp16_safe=fp16_safe, debug_finite=debug_finite_from_env(), mlp_chunk_mode=mlp_chunk_mode,
+                           mlp_chunk_tokens=mlp_chunk_tokens, batch_chunk=batch_chunk, attention_chunk=attention_chunk),)
 
 
 class PowerShardLTXLoRA:
+    """Устарело: используйте «PowerShard: LoRA» (тот же тип POWERSHARD_LORA). Оставлено для старых workflows."""
+    DEPRECATED = True
+
     @classmethod
     def INPUT_TYPES(cls):
         import folder_paths
         return {"required": {"lora_name": (folder_paths.get_filename_list("loras"),),
                              "strength": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01})},
-                "optional": {"lora": ("LTX_LORA",)}}
-    RETURN_TYPES = ("LTX_LORA",)
+                "optional": {"lora": ("POWERSHARD_LORA",)}}
+    RETURN_TYPES = ("POWERSHARD_LORA",)
     FUNCTION = "add"
     CATEGORY = CATEGORY
 
@@ -101,72 +83,26 @@ class PowerShardLTXLoader:
                                                                          "трансформер (diffusion_models/), bf16/fp16/fp8."}),
                              "config": ("POWERSHARD_CONFIG",)},
                 "optional": {"keep_in_memory": ("BOOLEAN", {"default": True}),
-                             "options": ("LTX_OPTIONS",), "lora": ("LTX_LORA",)}}
+                             "options": ("LTX_OPTIONS",), "weights": ("POWERSHARD_WEIGHTS",), "lora": ("POWERSHARD_LORA",)}}
     RETURN_TYPES = ("MODEL",)
     FUNCTION = "load"
     CATEGORY = CATEGORY
 
-    def load(self, checkpoint, config, keep_in_memory=True, options=None, lora=None):
+    def load(self, checkpoint, config, keep_in_memory=True, options=None, weights=None, lora=None):
         from dataclasses import replace
+        from .common_nodes import apply_weights
         from .ltx_adapter import load_ltx
         from .ltx_config import LTXOptions
+        from .wan_nodes import debug_finite_from_env
         config = replace(config, release_after_sampling=not keep_in_memory)
-        return (load_ltx(str(_resolve(checkpoint)), config, options or LTXOptions(), tuple(lora or ()), _report_dir()),)
+        options = apply_weights(options or LTXOptions(debug_finite=debug_finite_from_env()), weights)
+        return (load_ltx(str(_resolve(checkpoint)), config, options, tuple(lora or ()), _report_dir()),)
 
     @classmethod
-    def IS_CHANGED(cls, checkpoint, config, keep_in_memory=True, options=None, lora=None):
+    def IS_CHANGED(cls, checkpoint, config, keep_in_memory=True, options=None, weights=None, lora=None):
         from .web_api import provider_stamp
-        return (_choice_stat(checkpoint), repr(config), keep_in_memory, repr(options), repr(lora), provider_stamp())
-
-
-class PowerShardLTXTextEncoder:
-    """Gemma 3 12B / Gemma 4 + text projection LTX в пуле workers (как LTXAVTextEncoderLoader, но шардировано)."""
-    @classmethod
-    def INPUT_TYPES(cls):
-        import folder_paths
-        return {"required": {"text_encoder": (folder_paths.get_filename_list("text_encoders"),),
-                             "ckpt_name": (_model_choices(), {"tooltip": "LTX checkpoint с text_embedding_projection "
-                                                                       "(тот же файл, что для LTXAVTextEncoderLoader)."}),
-                             "config": ("POWERSHARD_CONFIG",),
-                             "after_encode": (["release", "release_now", "keep_ram"], {"default": "release", "tooltip":
-                                              "release: workers энкодера живут, пока кодируются промпты, и закрываются при старте "
-                                              "генератора / Free VRAM. Одинаковый текст всегда берётся из кэша."})},
-                "optional": QUANT_INPUTS}
-    RETURN_TYPES = ("CLIP",)
-    FUNCTION = "load"
-    CATEGORY = CATEGORY
-
-    def load(self, text_encoder, ckpt_name, config, after_encode="release", weight_format="dequantize", compute="auto"):
-        import folder_paths
-        from .native_te import load_distributed_te
-        paths = [folder_paths.get_full_path_or_raise("text_encoders", text_encoder), str(_resolve(ckpt_name))]
-        return (load_distributed_te(paths, "ltxv", config, after_encode, _report_dir(),
-                                    folder_paths.get_folder_paths("embeddings"), weight_format, compute),)
-
-    @classmethod
-    def IS_CHANGED(cls, text_encoder, ckpt_name, config, after_encode="release", weight_format="dequantize", compute="auto"):
-        return (_stat("text_encoders", text_encoder), _choice_stat(ckpt_name), repr(config), after_encode,
-                weight_format, compute)
-
-
-class PowerShardLTXInfo:
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {"required": {"checkpoint": (_model_choices(),), "gpu_count": ("INT", {"default": 6, "min": 1, "max": 64})}}
-    RETURN_TYPES = ("STRING",)
-    FUNCTION = "inspect"
-    CATEGORY = CATEGORY
-    OUTPUT_NODE = True
-
-    def inspect(self, checkpoint, gpu_count=6):
-        import json
-        from .ltx_config import LTXCheckpoint, describe_ltx, ltx_geometry, ltx_memory_plan
-        ckpt = LTXCheckpoint(_resolve(checkpoint))
-        config = ckpt.model_config()
-        value = json.dumps(dict(family=describe_ltx(config), config=config, geometry=ltx_geometry(config),
-                                key_prefix=ckpt.prefix, ignored_non_dit_keys=len(ckpt.ignored),
-                                memory=ltx_memory_plan(ckpt, gpu_count)), indent=2, ensure_ascii=False, default=str)
-        return {"ui": {"text": [value]}, "result": (value,)}
+        return (_choice_stat(checkpoint), repr(config), keep_in_memory, repr(options), repr(weights), repr(lora),
+                provider_stamp())
 
 
 class PowerShardLTXVAELoader:
@@ -205,29 +141,36 @@ class PowerShardLTXVAELoader:
 
 
 class PowerShardH3QuantLoader:
-    """MiniMax H3 с выбором хранения (fp16 / как в файле / int8 / fp8 / mxfp8 / nvfp4 / int4) и вычисления."""
+    """MiniMax H3 в пуле workers PowerShard с выбором хранения весов (узел «формат весов») и поддержкой Veda."""
     @classmethod
     def INPUT_TYPES(cls):
         import folder_paths
         return {"required": {"checkpoint": (folder_paths.get_filename_list("diffusion_models"),),
                              "config": ("POWERSHARD_CONFIG",)},
-                "optional": dict({"keep_in_memory": ("BOOLEAN", {"default": True})}, **QUANT_INPUTS)}
+                "optional": {"keep_in_memory": ("BOOLEAN", {"default": True}),
+                             "weights": ("POWERSHARD_WEIGHTS", {"tooltip": "weight_format / compute / fp16_accumulation; "
+                                                                           "weight_dtype для H3 не используется (всегда fp16)"}),
+                             "lora": ("POWERSHARD_LORA", {"tooltip": "LoRA / LoHa / LoKr H3 (PTD, FastH3, PDD и др.): "
+                                                                    "ключи разбирает ComfyUI, дельта сливается в shards"})}}
     RETURN_TYPES = ("MODEL",)
     FUNCTION = "load"
-    CATEGORY = "PowerShard"
+    CATEGORY = "PowerShard/MiniMax H3"
 
-    def load(self, checkpoint, config, keep_in_memory=True, weight_format="dequantize", compute="auto"):
+    def load(self, checkpoint, config, keep_in_memory=True, weights=None, lora=None):
         from dataclasses import replace
         import folder_paths
+        from .common_nodes import weights_or_default
         from .h3_quant import load_h3
+        w = weights_or_default(weights)
         path = folder_paths.get_full_path_or_raise("diffusion_models", checkpoint)
         config = replace(config, release_after_sampling=not keep_in_memory)
-        return (load_h3(path, config, weight_format, compute, _report_dir()),)
+        return (load_h3(path, config, w.weight_format, w.compute, _report_dir(), bool(w.fp16_accumulation),
+                        tuple(lora or ())),)
 
     @classmethod
-    def IS_CHANGED(cls, checkpoint, config, keep_in_memory=True, weight_format="dequantize", compute="auto"):
+    def IS_CHANGED(cls, checkpoint, config, keep_in_memory=True, weights=None, lora=None):
         from .web_api import provider_stamp
-        return (_stat("diffusion_models", checkpoint), repr(config), keep_in_memory, weight_format, compute,
+        return (_stat("diffusion_models", checkpoint), repr(config), keep_in_memory, repr(weights), repr(lora),
                 provider_stamp())
 
 
@@ -255,16 +198,20 @@ class PowerShardBlockCache:
                              "start_percent": ("FLOAT", {"default": 0.15, "min": 0.0, "max": 1.0, "step": 0.01}),
                              "end_percent": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.01}),
                              "max_consecutive_skips": ("INT", {"default": 3, "min": 1, "max": 100}),
-                             "warmup_steps": ("INT", {"default": 2, "min": 0, "max": 100})}}
+                             "warmup_steps": ("INT", {"default": 2, "min": 0, "max": 100})},
+                "optional": {"max_cache_mb": ("INT", {"default": 1024, "min": 64, "max": 65536, "step": 64, "tooltip":
+                                              "Предел VRAM на кэш residual в каждом GPU (LRU). Одна запись Wan 14B 480p/81 кадр "
+                                              "≈ 450 МБ; с Context Windows нужна запись на окно."})}}
     RETURN_TYPES = ("MODEL",)
     FUNCTION = "apply"
     CATEGORY = ACCEL_CATEGORY
 
-    def apply(self, model, threshold=0.08, start_percent=0.15, end_percent=0.95, max_consecutive_skips=3, warmup_steps=2):
+    def apply(self, model, threshold=0.08, start_percent=0.15, end_percent=0.95, max_consecutive_skips=3, warmup_steps=2,
+              max_cache_mb=1024):
         from .accel import BlockCacheHolder, install_holder
         model = _distributed(model)
         holder = BlockCacheHolder(threshold, _sigma(model, start_percent), _sigma(model, end_percent),
-                                  max_consecutive_skips, warmup_steps)
+                                  max_consecutive_skips, warmup_steps, max_cache_mb)
         return (install_holder(model, "powershard_block_cache", holder),)
 
 
@@ -319,8 +266,6 @@ LTX_NODE_CLASS_MAPPINGS = {
     "PowerShardLTXOptions": PowerShardLTXOptions,
     "PowerShardLTXLoRA": PowerShardLTXLoRA,
     "PowerShardLTXLoader": PowerShardLTXLoader,
-    "PowerShardLTXTextEncoder": PowerShardLTXTextEncoder,
-    "PowerShardLTXInfo": PowerShardLTXInfo,
     "PowerShardLTXVAELoader": PowerShardLTXVAELoader,
     "PowerShardH3QuantLoader": PowerShardH3QuantLoader,
     "PowerShardBlockCache": PowerShardBlockCache,
@@ -331,10 +276,8 @@ LTX_NODE_DISPLAY_NAME_MAPPINGS = {
     "PowerShardLTXOptions": "PowerShard LTX: численная политика / память",
     "PowerShardLTXLoRA": "PowerShard LTX: LoRA / IC-LoRA (слияние в shards)",
     "PowerShardLTXLoader": "PowerShard LTX-2/2.5: Sequence Loader",
-    "PowerShardLTXTextEncoder": "PowerShard LTX: Gemma Distributed Encoder",
-    "PowerShardLTXInfo": "PowerShard LTX: checkpoint info",
     "PowerShardLTXVAELoader": "PowerShard LTX: Video+Audio VAE из checkpoint (без DiT)",
-    "PowerShardH3QuantLoader": "PowerShard MiniMax H3: Loader (форматы весов / int8 / fp8 / nvfp4 / int4)",
+    "PowerShardH3QuantLoader": "PowerShard MiniMax H3: Loader",
     "PowerShardBlockCache": "PowerShard: Block Cache (TeaCache/FBCache, Wan+LTX)",
     "PowerShardNAG": "PowerShard: NAG (Normalized Attention Guidance)",
     "PowerShardRIFLEx": "PowerShard Wan: RIFLEx (длинное видео)",

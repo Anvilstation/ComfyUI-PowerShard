@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "comfyui-powershard"
 version = "0.5.3"
-description = "Distributed MiniMax H3, Wan and LTX inference for ComfyUI with FSDP2 and sequence parallelism"
+description = "Distributed MiniMax H3, Wan, LTX and image model inference for ComfyUI with FSDP2 and sequence parallelism"
 requires-python = ">=3.10"
 license = {file = "LICENSE"}
 dependencies = []

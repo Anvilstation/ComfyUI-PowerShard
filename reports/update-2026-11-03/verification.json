@@ -1,0 +1,62 @@
+{
+  "date": "2026-11-03",
+  "package_version": "0.5.3",
+  "source_archive": "ComfyUI-PowerShard-Wan22 (16).zip",
+  "source_archive_sha256": "9d58956f6a2adc0e04e56d590422445066140d9493a6ea9e52a7c9831ab3066c",
+  "attached_readme": "README_FULL_RU.md",
+  "attached_readme_sha256": "4ac24e22943426cf39412e526f630276fbfa99557c3466fb61f9573e8a186356",
+  "readme_destination": "README_RU.md",
+  "attached_readme_matches_archive": true,
+  "base_commit": "ad3c8634e77e6b59c5975ae37145c9cc553879a3",
+  "environment": {
+    "platform": "win32",
+    "python": "3.11.15",
+    "torch": "2.12.0+cpu",
+    "torch_cuda": null
+  },
+  "pytest": {
+    "total": 476,
+    "passed": 316,
+    "skipped": 160,
+    "failed": 0,
+    "errors": 0,
+    "skip_reasons": {
+      "NOT_RUN: передайте --comfy для native H3 tests": 66,
+      "NOT_RUN: pass --comfy for the image adapter dtype test": 1,
+      "NOT_RUN: передайте --comfy": 53,
+      "process groups": 1,
+      "NOT_RUN: передайте --comfy для native LTX tests": 8,
+      "NOT_RUN: передайте --comfy для native Wan tests": 24,
+      "NOT_RUN: передайте --comfy для Wan pipeline tests": 5,
+      "workflows/ удалён (используются example_workflows/); образец legacy UI недоступен": 2
+    }
+  },
+  "image_dtype_test_with_ComfyUI": {
+    "total": 1,
+    "passed": 1,
+    "skipped": 0,
+    "failed": 0,
+    "errors": 0,
+    "skip_reasons": {}
+  },
+  "comfy_commit_for_image_dtype_test": "2472a20bd291451acc303917059ab14dfc380478",
+  "checks": {
+    "compileall": "PASS",
+    "javascript_syntax": "PASS",
+    "registered_nodes": 34,
+    "top_level_readme_local_links": "PASS"
+  },
+  "changes_to_supplied_archive": {
+    "pyproject.toml": "Preserve accurate package description and include image model inference; version unchanged.",
+    "tests/test_sequence_distributed.py": "Retain the published empty-shard error metric fix.",
+    "tests/test_image_config.py": "Set up the ComfyUI path and CPU options for the adapter dtype test; explicitly skip when --comfy is absent."
+  },
+  "hardware": {
+    "CUDA_NCCL": "NOT_RUN",
+    "POWER9": "NOT_RUN",
+    "ATS": "NOT_RUN",
+    "production_checkpoints": "NOT_RUN",
+    "GPU_performance": "NOT_MEASURED"
+  },
+  "note": "Runtime source and both README files preserved from the supplied archive. Previous publication evidence retained under reports/release-2026-10-08. No new version or replacement of the v0.5.3 tag."
+}

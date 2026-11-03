@@ -165,6 +165,7 @@ class LTXOptions:
     weight_dtype: str = "auto"    # auto: bf16 на sm80+ (RTX 30/40/50, A100/H100), fp16 на V100; либо fp16 / bf16
     weight_format: str = "dequantize"  # хранение Linear блоков: dequantize / as_file / int8 / fp8 / mxfp8 / nvfp4 / int4
     compute: str = "auto"              # auto / native / dequantize (для квантованного хранения)
+    fp16_accumulation: bool = False    # cuBLAS fp16 accumulate (игровые GPU: до 2x GEMM; V100 — без эффекта)
 
     def __post_init__(self):
         if self.mlp_chunk_mode not in ("off", "auto", "manual"):

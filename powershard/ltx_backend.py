@@ -43,6 +43,8 @@ class LTXBackend:
         root.eval().requires_grad_(False)
         self.attention = AttentionDispatcher(config, attention_policy)
         self.tracker, self.sequence = configure_ltx(net, self.geometry, options, self.attention, config)
+        from .cancel import install_block_hooks
+        install_block_hooks(list(net.transformer_blocks))
         from safetensors import safe_open
         from .quant_linear import install_quant_linears
         self.quant_report = install_quant_linears(
@@ -95,6 +97,7 @@ class LTXBackend:
         if not self.config.cpu_offload:
             raise ValueError("LTX CPU retention requires CPUOffloadPolicy")
         before = memory(self.device)
+        self.spectrum.clear()  # Block Cache residuals в VRAM
         for unit in self.units:
             unit.reshard()
         assert_sharded(self.root, True)

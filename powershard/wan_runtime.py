@@ -14,8 +14,11 @@ import threading
 import queue
 import warnings
 from . import runtime
-from .runtime import Session, _SESSIONS, wait_for_pending_phase
+from .runtime import Session, _SESSIONS
 from .patch_config import H3PatchConfig
+from . import lifecycle
+
+lifecycle.install()
 
 
 _POLICY_CACHE = {}
@@ -89,9 +92,9 @@ def reusable_wan_session(checkpoint, config, comfy_path, report_dir=None, probe_
     options = json.loads(json.dumps(role_options or {}, sort_keys=True))
     directory = Path(report_dir or Path(tempfile.gettempdir()) / "powershard-reports")
     comfy = str(Path(comfy_path).resolve())
-    if not config.release_after_sampling:
-        wait_for_pending_phase(getattr(sys.modules.get("comfy.model_management"),
-                                       "throw_exception_if_processing_interrupted", None))
+    # Всегда: иначе загрузчик следующей задачи блокируется на phase lock дренажа без реакции на Cancel.
+    runtime.wait_for_pending_phase(getattr(sys.modules.get("comfy.model_management"),
+                                           "throw_exception_if_processing_interrupted", None))
     with runtime._PHASE_LOCK:
         # Одна session для всех MODEL выходов MoE loader: high/low/moe делят workers.
         for session in list(_SESSIONS):
@@ -108,7 +111,7 @@ class WanSession(Session):
         super().__init__(checkpoint, config, comfy_path, report_dir, probe_only, patch, "h3", role_options)
         # Отдельная роль для umT5: старт энкодера не закрывает генератор той же роли (только паркует).
         kind = (role_options or {}).get("kind")
-        self.role = {"t5": "wan_t5", "native_te": "native_te", "ltx": "ltx", "h3q": "h3"}.get(kind, "wan")
+        self.role = {"t5": "wan_t5", "native_te": "native_te", "ltx": "ltx", "h3q": "h3", "image": "image"}.get(kind, "wan")
         self.kind = kind
         self._wan_run_slots = set()
         self._wan_deferred = False
@@ -141,10 +144,13 @@ class WanSession(Session):
         return ("high" in experts and "low" in experts and self._wan_run_slots == {"high"} and self.running)
 
     def finish_sampling(self):
+        # Флаг неудачи ставит lifecycle.boundary_outer_sample (Cancel/ошибка внутри sampling).
+        failed = self.__dict__.pop("_ps_run_failed", False)
+        defer = not failed and self.should_defer()
+        self._wan_run_slots = set()  # и при дренаже: иначе старые слоты ломают решение следующей задачи
         if self.draining:
+            self._wan_deferred = False
             return
-        defer = self.should_defer()
-        self._wan_run_slots = set()
         if defer:
             # Conditioning stage очищается, workers и VRAM-shards остаются для low-noise.
             self._wan_deferred = True
@@ -157,6 +163,14 @@ class WanSession(Session):
     def deactivate(self):
         self._wan_deferred = False
         return super().deactivate()
+
+    def settle_deferred(self):
+        """Конец задачи ComfyUI: high-noise проход остался без low-noise — освободить как обычно."""
+        if not self._wan_deferred or self.draining:
+            return
+        self._wan_deferred = False
+        self._wan_run_slots = set()
+        Session.finish_sampling(self)
 
     def close(self, keep_stage=False):
         # _wan_run_slots не сбрасывается: start() вызывает close(keep_stage=True) уже
@@ -180,7 +194,7 @@ class WanSession(Session):
 
     def start(self, cancel=None):
         self.wait_for_drain(cancel)
-        wait_for_pending_phase(cancel)
+        runtime.wait_for_pending_phase(cancel)
         with runtime._PHASE_LOCK, self.lock:
             from .web_api import provider_stamp
             stamp = provider_stamp()
@@ -201,11 +215,13 @@ class WanSession(Session):
             from .wan_config import WanCheckpoint, same_geometry
             self.selected_devices = resolve_gpu_selection(self.config.gpu_ids)
             uuids = [d["uuid"] for d in self.selected_devices]
-            if self.role in ("wan_t5", "native_te"):
-                # Text encoders считаются native comfy attention (FP32 SDPA) — CUDA probes FP16 kernels не нужны.
+            if self.role in ("wan_t5", "native_te", "image"):
+                # Text encoders и image-модели считают родной attention ComfyUI — CUDA probes FP16 kernels не нужны.
                 from .attention_policy import policy_fingerprint
-                self.attention_policy = dict(requested="comfy_native", effective="comfy_native_fp32",
-                                             devices=uuids, reason="text encoder: FP32 compute, native comfy attention")
+                self.attention_policy = dict(requested="comfy_native", effective="comfy_native" if self.role == "image"
+                                             else "comfy_native_fp32", devices=uuids,
+                                             reason="image model: native comfy attention" if self.role == "image"
+                                             else "text encoder: FP32 compute, native comfy attention")
                 self.attention_policy["fingerprint"] = policy_fingerprint(self.attention_policy)
             elif self.role_options.get("kind") == "h3q":
                 from .attention_policy import prepare_policy
@@ -228,6 +244,7 @@ class WanSession(Session):
             self._provider_stamp = stamp
             self._wan_request_stamp = request_stamp
             self.report_dir.mkdir(parents=True, exist_ok=True)
+            lifecycle.prune_reports(self.report_dir)
             self.path = Path(tempfile.mkdtemp(prefix="powershard-wan-"))
             settings = {"checkpoint": self.checkpoint, "config": self.config.to_dict(), "comfy_path": self.comfy_path,
                         "role": "wan", "role_options": self.role_options, "patch": self.patch.to_dict(),

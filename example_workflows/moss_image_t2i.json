@@ -1,0 +1,623 @@
+{
+ "last_node_id": 13,
+ "last_link_id": 12,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "PowerShardConfig",
+   "pos": [
+    40,
+    40
+   ],
+   "size": [
+    340,
+    176
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "POWERSHARD_CONFIG",
+     "type": "POWERSHARD_CONFIG",
+     "links": [
+      1,
+      2
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "PowerShardConfig"
+   },
+   "widgets_values": [
+    "all",
+    "gpu",
+    "fp16",
+    "auto",
+    "ulysses"
+   ]
+  },
+  {
+   "id": 2,
+   "type": "PowerShardImageLoader",
+   "pos": [
+    420,
+    40
+   ],
+   "size": [
+    340,
+    190
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "config",
+     "type": "POWERSHARD_CONFIG",
+     "link": 1
+    },
+    {
+     "name": "weights",
+     "type": "POWERSHARD_WEIGHTS",
+     "link": null
+    },
+    {
+     "name": "lora",
+     "type": "POWERSHARD_LORA",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      5
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "PowerShardImageLoader"
+   },
+   "widgets_values": [
+    "diffusion_models/moss_image_sft_bf16.safetensors",
+    "auto",
+    true
+   ]
+  },
+  {
+   "id": 3,
+   "type": "PowerShardTextEncoder",
+   "pos": [
+    420,
+    270
+   ],
+   "size": [
+    340,
+    298
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "config",
+     "type": "POWERSHARD_CONFIG",
+     "link": 2
+    },
+    {
+     "name": "weights",
+     "type": "POWERSHARD_WEIGHTS",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "CLIP",
+     "type": "CLIP",
+     "links": [
+      3,
+      4
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "PowerShardTextEncoder"
+   },
+   "widgets_values": [
+    "qwen3.5_9b.safetensors",
+    "moss_image",
+    "workers",
+    "release",
+    "none",
+    "none",
+    "none",
+    "none"
+   ]
+  },
+  {
+   "id": 4,
+   "type": "CLIPTextEncode",
+   "pos": [
+    800,
+    40
+   ],
+   "size": [
+    340,
+    214
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "clip",
+     "type": "CLIP",
+     "link": 3
+    }
+   ],
+   "outputs": [
+    {
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      6
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CLIPTextEncode"
+   },
+   "widgets_values": [
+    "A cozy lighthouse keeper's room at dusk, warm lamp light, rain on the window, a cat sleeping on a stack of old maps, detailed, cinematic"
+   ],
+   "title": "Positive"
+  },
+  {
+   "id": 5,
+   "type": "CLIPTextEncode",
+   "pos": [
+    800,
+    294
+   ],
+   "size": [
+    340,
+    214
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "clip",
+     "type": "CLIP",
+     "link": 4
+    }
+   ],
+   "outputs": [
+    {
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      7
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CLIPTextEncode"
+   },
+   "widgets_values": [
+    "low quality, blurry, distorted"
+   ],
+   "title": "Negative"
+  },
+  {
+   "id": 6,
+   "type": "EmptyFlux2LatentImage",
+   "pos": [
+    40,
+    256
+   ],
+   "size": [
+    340,
+    124
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      8
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "EmptyFlux2LatentImage"
+   },
+   "widgets_values": [
+    1024,
+    1024,
+    1
+   ]
+  },
+  {
+   "id": 7,
+   "type": "KSampler",
+   "pos": [
+    1180,
+    40
+   ],
+   "size": [
+    340,
+    316
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 5
+    },
+    {
+     "name": "positive",
+     "type": "CONDITIONING",
+     "link": 6
+    },
+    {
+     "name": "negative",
+     "type": "CONDITIONING",
+     "link": 7
+    },
+    {
+     "name": "latent_image",
+     "type": "LATENT",
+     "link": 8
+    }
+   ],
+   "outputs": [
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      9
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "KSampler"
+   },
+   "widgets_values": [
+    42,
+    "fixed",
+    50,
+    3.0,
+    "euler",
+    "simple",
+    1.0
+   ]
+  },
+  {
+   "id": 8,
+   "type": "VAELoader",
+   "pos": [
+    40,
+    420
+   ],
+   "size": [
+    340,
+    72
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "VAE",
+     "type": "VAE",
+     "links": [
+      11
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAELoader"
+   },
+   "widgets_values": [
+    "flux2-vae.safetensors"
+   ]
+  },
+  {
+   "id": 9,
+   "type": "PowerShardRelease",
+   "pos": [
+    1560,
+    40
+   ],
+   "size": [
+    340,
+    146
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "samples",
+     "type": "LATENT",
+     "link": 9
+    }
+   ],
+   "outputs": [
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      10
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "STRING",
+     "type": "STRING",
+     "links": [],
+     "slot_index": 1
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "PowerShardRelease"
+   },
+   "widgets_values": [
+    true,
+    false,
+    true
+   ]
+  },
+  {
+   "id": 10,
+   "type": "VAEDecode",
+   "pos": [
+    1940,
+    40
+   ],
+   "size": [
+    340,
+    116
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "samples",
+     "type": "LATENT",
+     "link": 10
+    },
+    {
+     "name": "vae",
+     "type": "VAE",
+     "link": 11
+    }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      12
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAEDecode"
+   },
+   "widgets_values": []
+  },
+  {
+   "id": 11,
+   "type": "SaveImage",
+   "pos": [
+    2320,
+    40
+   ],
+   "size": [
+    340,
+    94
+   ],
+   "flags": {},
+   "order": 10,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 12
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "SaveImage"
+   },
+   "widgets_values": [
+    "image/moss_image"
+   ]
+  },
+  {
+   "id": 12,
+   "type": "Note",
+   "pos": [
+    40,
+    -260
+   ],
+   "size": [
+    760,
+    200
+   ],
+   "flags": {},
+   "order": 11,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {
+    "text": ""
+   },
+   "color": "#432",
+   "bgcolor": "#653",
+   "widgets_values": [
+    "PowerShard Image: модель шардируется по GPU (FSDP2), forward — родной код ComfyUI. parallel=auto: Flux / Qwen-Image / Z-Image / MOSS-Image — токены картинки по GPU (sequence), остальные (SDXL) — строки batch (cond/uncond) по GPU.\nEN: the model is sharded across GPUs; parallel=auto splits image tokens (sequence) for Flux / Qwen-Image / Z-Image / MOSS-Image and batch rows for other models (SDXL)."
+   ]
+  },
+  {
+   "id": 13,
+   "type": "Note",
+   "pos": [
+    40,
+    -480
+   ],
+   "size": [
+    760,
+    200
+   ],
+   "flags": {},
+   "order": 12,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {
+    "text": ""
+   },
+   "color": "#432",
+   "bgcolor": "#653",
+   "widgets_values": [
+    "MOSS-Image (5B, латенты Flux.2): 50 шагов, cfg 3, shift 5 (по умолчанию модели). Энкодер Qwen3.5-9B в workers.\nEN: 50 steps, cfg 3, the model's default shift 5; the Qwen3.5-9B encoder runs in workers."
+   ]
+  }
+ ],
+ "links": [
+  [
+   1,
+   1,
+   0,
+   2,
+   0,
+   "POWERSHARD_CONFIG"
+  ],
+  [
+   2,
+   1,
+   0,
+   3,
+   0,
+   "POWERSHARD_CONFIG"
+  ],
+  [
+   3,
+   3,
+   0,
+   4,
+   0,
+   "CLIP"
+  ],
+  [
+   4,
+   3,
+   0,
+   5,
+   0,
+   "CLIP"
+  ],
+  [
+   5,
+   2,
+   0,
+   7,
+   0,
+   "MODEL"
+  ],
+  [
+   6,
+   4,
+   0,
+   7,
+   1,
+   "CONDITIONING"
+  ],
+  [
+   7,
+   5,
+   0,
+   7,
+   2,
+   "CONDITIONING"
+  ],
+  [
+   8,
+   6,
+   0,
+   7,
+   3,
+   "LATENT"
+  ],
+  [
+   9,
+   7,
+   0,
+   9,
+   0,
+   "LATENT"
+  ],
+  [
+   10,
+   9,
+   0,
+   10,
+   0,
+   "LATENT"
+  ],
+  [
+   11,
+   8,
+   0,
+   10,
+   1,
+   "VAE"
+  ],
+  [
+   12,
+   10,
+   0,
+   11,
+   0,
+   "IMAGE"
+  ]
+ ],
+ "groups": [],
+ "config": {},
+ "extra": {
+  "ds": {
+   "scale": 0.65,
+   "offset": [
+    40,
+    320
+   ]
+  }
+ },
+ "version": 0.4
+}

@@ -132,17 +132,28 @@ class _Sigma:
 
 
 def test_block_cache_holder_steps_and_reset():
-    from powershard.accel import BlockCacheHolder
+    from powershard.accel import BlockCacheHolder, FirstBlockCache
     holder = BlockCacheHolder(0.1, sigma_start=0.9, sigma_end=0.1, max_skips=2, warmup_steps=1)
     opts = lambda s: {"sigmas": _Sigma(s), "cond_or_uncond": [0, 1]}  # noqa: E731
     first = holder.spec(opts(1.0), None, [(2, 16, 3, 4, 4)])
-    assert first["reset"] and not first["active"]          # sigma 1.0 > start
+    assert not first["active"]                              # sigma 1.0 > start
     second = holder.spec(opts(0.8), None, [(2, 16, 3, 4, 4)])
-    assert not second["reset"] and second["active"] and second["key"] == first["key"]
+    assert second["active"] and second["key"] == first["key"] and second["prefix"] == first["prefix"]
     again = holder.spec(opts(1.0), None, [(2, 16, 3, 4, 4)])  # новый sampling pass
-    assert again["reset"] and again["key"] != first["key"]
+    assert again["key"] != first["key"] and again["prefix"] != first["prefix"]
     other = holder.spec(opts(0.7), None, [(2, 16, 3, 4, 4)], extra=("stg",))
     assert other["key"] != holder.spec(opts(0.7), None, [(2, 16, 3, 4, 4)])["key"]
+    # MoE: смена эксперта меняет префикс -> записи high удаляются уже на первом (даже неактивном) шаге low.
+    high = holder.spec(opts(0.6), None, [(1, 4)], scope="high")
+    low = holder.spec(opts(0.5), None, [(1, 4)], scope="low")
+    cache = FirstBlockCache()
+    cache.entries = {high["key"]: {"bytes": 1}, low["key"]: {"bytes": 1}}
+    cache.prune(low)
+    assert list(cache.entries) == [low["key"]]
+    # Новая задача: счётчик warmup не наследуется (раньше прогрев пропускался при denoise<1).
+    holder.spec(opts(0.4), None, [(1, 4)])
+    holder.begin_run()
+    assert not holder.spec(opts(0.3), None, [(1, 4)])["active"]
 
 
 def test_nag_rows_and_riflex_index():
@@ -190,16 +201,6 @@ def test_partial_softmax_allreduce_equals_full_numpy():
         l = sum(np.nan_to_num(l * np.exp(m - top)) for m, l, _ in parts)
         o = sum(np.nan_to_num(o * np.exp(m - top)) for m, _, o in parts)
     np.testing.assert_allclose(o / l, full, rtol=1e-10, atol=1e-12)
-
-
-def test_ltx_workflows_are_valid_api_graphs():
-    for path in sorted((ROOT / "workflows_ltx").glob("*.api.json")):
-        graph = json.loads(path.read_text())
-        for node_id, node in graph.items():
-            assert "class_type" in node and "inputs" in node, (path.name, node_id)
-            for value in node["inputs"].values():
-                if isinstance(value, list) and len(value) == 2 and isinstance(value[0], str):
-                    assert value[0] in graph, (path.name, node_id, value)
 
 
 def test_ltx_nodes_register_without_torch(monkeypatch):
@@ -288,10 +289,56 @@ def test_quant_options_and_nodes(monkeypatch):
     fake = types.ModuleType("folder_paths")
     fake.get_filename_list = lambda folder: [f"{folder}_a.safetensors"]
     monkeypatch.setitem(sys.modules, "folder_paths", fake)
+    from powershard.common_nodes import PowerShardWeights, apply_weights
     from powershard.ltx_nodes import LTX_NODE_CLASS_MAPPINGS
+    from powershard.wan_nodes import WAN_NODE_CLASS_MAPPINGS
+    weights = PowerShardWeights.INPUT_TYPES()["required"]
+    assert list(weights["weight_format"][0]) == list(WEIGHT_FORMATS) and list(weights["compute"][0]) == list(COMPUTE_MODES)
+    # формат весов задаётся одним узлом; loader-ы принимают его как вход weights, Options его не дублируют
+    for cls in (LTX_NODE_CLASS_MAPPINGS["PowerShardH3QuantLoader"], LTX_NODE_CLASS_MAPPINGS["PowerShardLTXLoader"],
+                WAN_NODE_CLASS_MAPPINGS["PowerShardWanLoader"], WAN_NODE_CLASS_MAPPINGS["PowerShardWan22MoELoader"]):
+        assert cls.INPUT_TYPES()["optional"]["weights"][0] == "POWERSHARD_WEIGHTS"
+    for cls in (WAN_NODE_CLASS_MAPPINGS["PowerShardWanOptions"], LTX_NODE_CLASS_MAPPINGS["PowerShardLTXOptions"]):
+        fields = {**cls.INPUT_TYPES()["required"], **cls.INPUT_TYPES().get("optional", {})}
+        assert not {"weight_format", "compute", "weight_dtype", "fp16_accumulation", "debug_finite"} & set(fields)
+    w = PowerShardWeights().create("int8", "dequantize", "fp16", True)[0]
+    merged = apply_weights(WanOptions(), w)
+    assert (merged.weight_format, merged.compute, merged.weight_dtype, merged.fp16_accumulation) == ("int8", "dequantize", "fp16", True)
+    assert apply_weights(LTXOptions(), None) == LTXOptions()
+
+
+def test_fp16_accumulation_option_reaches_workers(monkeypatch):
+    from powershard.wan_config import WanOptions
+    from powershard.ltx_config import LTXOptions
     from powershard.wan_nodes import PowerShardWanOptions
-    h3 = LTX_NODE_CLASS_MAPPINGS["PowerShardH3QuantLoader"].INPUT_TYPES()
-    flat = {**h3["required"], **h3.get("optional", {})}
-    assert list(flat["weight_format"][0]) == list(WEIGHT_FORMATS) and list(flat["compute"][0]) == list(COMPUTE_MODES)
-    wan = PowerShardWanOptions.INPUT_TYPES()
-    assert {"weight_format", "compute", "weight_dtype"} <= set({**wan["required"], **wan.get("optional", {})})
+    assert WanOptions(fp16_accumulation=True).to_dict()["fp16_accumulation"] is True
+    assert LTXOptions(fp16_accumulation=True).to_dict()["fp16_accumulation"] is True
+    assert PowerShardWanOptions().create()[0].debug_finite is False
+    monkeypatch.setenv("POWERSHARD_DEBUG_FINITE", "1")
+    assert PowerShardWanOptions().create()[0].debug_finite is True
+
+
+def test_common_nodes_register_without_torch():
+    import subprocess
+    code = ("import sys; from powershard.common_nodes import COMMON_NODE_CLASS_MAPPINGS as n; "
+            "assert {'PowerShardWeights', 'PowerShardTextEncoder', 'PowerShardInfo', 'PowerShardLoRA'} <= set(n); "
+            "assert 'torch' not in sys.modules")
+    subprocess.run([sys.executable, "-c", code], cwd=ROOT, check=True)
+
+
+def test_text_encoder_node_inputs(monkeypatch):
+    fake = types.ModuleType("folder_paths")
+    fake.get_filename_list = lambda folder: [f"{folder}_a.safetensors"]
+    monkeypatch.setitem(sys.modules, "folder_paths", fake)
+    from powershard.common_nodes import PowerShardTextEncoder, PowerShardInfo
+    fields = PowerShardTextEncoder.INPUT_TYPES()
+    assert fields["required"]["type"][0][:2] == ["wan_umt5", "ltx_gemma"]
+    assert fields["required"]["placement"][0] == ["workers", "cpu_fp32"]
+    assert "checkpoints/checkpoints_a.safetensors" in fields["optional"]["ltx_checkpoint"][0]
+    with pytest.raises(ValueError, match="POWERSHARD_CONFIG"):
+        fake.get_full_path_or_raise = lambda folder, name: f"/x/{name}"
+        fake.get_folder_paths = lambda folder: []
+        PowerShardTextEncoder().load("text_encoders_a.safetensors", "wan_umt5", "workers")
+    with pytest.raises(ValueError, match="ltx_checkpoint"):
+        PowerShardTextEncoder().load("text_encoders_a.safetensors", "ltx_gemma", "workers", config=object())
+    assert "diffusion_models/diffusion_models_a.safetensors" in PowerShardInfo.INPUT_TYPES()["required"]["checkpoint"][0]

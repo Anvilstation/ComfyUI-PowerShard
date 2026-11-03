@@ -1,0 +1,13 @@
+SageAttention (Thu-ML, https://github.com/thu-ml/SageAttention)
+
+powershard/veda/kernels.py :: _attention_int8_kernel and the per-block INT8 quantisation are taken from
+Veda-on-ComfyUI (veda_comfy/kernels/sage/sparse_int8.py, MIT), which is itself derived from
+quant_per_block.py / attn_qk_int8_per_block.py of the PyPI package sageattention==1.0.6.
+
+License of the upstream code:
+  * PyPI sageattention 1.0.6 declares "BSD 3-Clause License";
+  * the current GitHub repository thu-ml/SageAttention is published under Apache-2.0
+    (full Apache-2.0 text: licenses/Raylight-Apache-2.0.txt).
+Both licenses are permissive and compatible with GPL-3.0-or-later. Copyright remains with the
+SageAttention authors (Thu-ML). Changes: block-sparse key walk, valid_count padding mask,
+FP32 accumulation of P*V, explicit softmax scale (see the docstring of powershard/veda/kernels.py).
