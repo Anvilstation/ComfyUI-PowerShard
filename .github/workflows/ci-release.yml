@@ -1,0 +1,137 @@
+name: CI and release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: CPU tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.12']
+    env:
+      OMP_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            requirements-*.txt
+            .github/workflows/ci-release.yml
+      - name: Install CPU test dependencies
+        run: |
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu 'torch==2.12.0+cpu'
+          python -m pip install -r requirements-ci.txt
+      - name: Check Python and JavaScript syntax
+        run: |
+          python -m compileall -q __init__.py powershard scripts tests
+          node --input-type=module --check < web/powershard.js
+      - name: Run CPU tests
+        run: python -m pytest -q -ra
+
+  package:
+    name: Build and check install ZIP
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Package the checked commit
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_type == 'tag' && github.ref_name || '' }}
+        run: |
+          if [[ -n "$RELEASE_TAG" ]]; then
+            if ! git merge-base --is-ancestor HEAD refs/remotes/origin/main; then
+              echo 'Release tags must point to a commit in main.' >&2
+              exit 1
+            fi
+            if [[ "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" != "$(git rev-parse HEAD)" ]]; then
+              echo 'Release tag does not point to the tested commit.' >&2
+              exit 1
+            fi
+            python3 scripts/build_release.py --tag "$RELEASE_TAG"
+          else
+            python3 scripts/build_release.py
+          fi
+      - name: Save release assets for publishing
+        if: github.event_name == 'push' && github.ref_type == 'tag'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: powershard-release
+          path: dist/
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
+
+  publish:
+    name: Publish GitHub release
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: powershard-release
+          path: dist
+      - name: Publish verified assets and release notes
+        working-directory: dist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          version="${tag#v}"
+          zip="ComfyUI-PowerShard-$version.zip"
+          sums="PowerShard-$version-SHA256SUMS.txt"
+          manifest="PowerShard-$version-release-manifest.json"
+          sha256sum --check --strict "$sums"
+          commit=$(jq -er '.commit' "$manifest")
+          tagged_commit=$(gh api "repos/$GH_REPO/commits/refs%2Ftags%2F$tag" --jq '.sha')
+          if [[ "$commit" != "$tagged_commit" ]]; then
+            echo 'Release tag changed after packaging.' >&2
+            exit 1
+          fi
+          case "$(gh release view "$tag" --json isDraft --jq '.isDraft' 2>/dev/null || true)" in
+            true)
+              gh release upload "$tag" "$zip" "$sums" "$manifest" --clobber
+              gh release edit "$tag" --draft=false --title "PowerShard $version" --notes-file RELEASE_NOTES.md
+              ;;
+            false)
+              echo "Release $tag is already published; its assets will not be overwritten." >&2
+              exit 1
+              ;;
+            *)
+              gh release create "$tag" "$zip" "$sums" "$manifest" --verify-tag \
+                --title "PowerShard $version" --notes-file RELEASE_NOTES.md
+              ;;
+          esac

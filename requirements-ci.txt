@@ -1,0 +1,5 @@
+# Test dependencies for GitHub Actions. Install the CPU build of PyTorch separately.
+-r requirements-test.txt
+-r requirements-runtime.txt
+numpy==2.2.6
+comfy-kitchen==0.2.37

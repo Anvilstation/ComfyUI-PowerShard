@@ -1,6 +1,8 @@
 # ComfyUI-PowerShard — Wan, LTX-2, MiniMax H3 и image-модели (SDXL, Flux, Z-Image, Qwen-Image, MOSS) на нескольких GPU
 
-[English version](README.md)
+[![CI и релизы](https://github.com/Anvilstation/ComfyUI-PowerShard/actions/workflows/ci-release.yml/badge.svg?branch=main)](https://github.com/Anvilstation/ComfyUI-PowerShard/actions/workflows/ci-release.yml)
+
+[English version](README.md) · [Скачать последний релиз](https://github.com/Anvilstation/ComfyUI-PowerShard/releases/latest) · [История изменений](CHANGELOG.md) · [Как выпустить релиз](docs/RELEASING.md#как-выпустить-релиз)
 
 > **Важно прочитать до установки**
 >

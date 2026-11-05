@@ -3,7 +3,7 @@ requires = ["setuptools>=70,<82"]
 build-backend = "setuptools.build_meta"
 [project]
 name = "comfyui-powershard"
-version = "0.5.3"
+version = "0.6.0"
 description = "Distributed MiniMax H3, Wan, LTX and image model inference for ComfyUI with FSDP2 and sequence parallelism"
 requires-python = ">=3.10"
 license = {file = "LICENSE"}
