@@ -168,9 +168,15 @@ def prepared_linears(modules, budget, enabled=True):
     size = sum(m.in_features*m.out_features*2 for m, reuse in zip(modules, bounded) if not reuse)
     staging = max((0 if reuse else 16*m.in_features*(min(m.rows,m.out_features) if isinstance(m,Int8Linear)
                     else m.out_features) for m, reuse in zip(modules, bounded)),default=0)
-    use = enabled and size+staging <= budget and all(getattr(m,"_ps_safe",False) and not m._ps_fp32 for m in modules)
+    # QuantLinear owns packed qbytes and has weight=None. Its forward performs
+    # dequantization/scaling itself; the prepared-weight cache only understands
+    # the floating Linear and rowwise Int8Linear representations below.
+    supported = all(isinstance(m, (Linear, Int8Linear)) for m in modules)
+    use = enabled and supported and size+staging <= budget and all(getattr(m,"_ps_safe",False) and not m._ps_fp32 for m in modules)
     info = dict(prepared_weight_bytes=size if use else 0, preparation_peak_estimate=size+staging if use else 0,
-                preparation="active MLP, reused across token chunks" if use else "per-call tiles; preparation budget insufficient or one chunk")
+                preparation=("active MLP, reused across token chunks" if use else
+                             "per-call dequantization; packed weights" if not supported else
+                             "per-call tiles; preparation budget insufficient or one chunk"))
     try:
         if use:
             for m in modules:

@@ -101,3 +101,20 @@ def test_quant_linear_pack_unpack_dequantize(comfy, weight_format):
     ref = torch.nn.functional.linear(x, qt.dequantize().to(torch.bfloat16))
     assert out.shape == (2, 3, 64)
     torch.testing.assert_close(out.float(), ref.float(), atol=2e-2, rtol=2e-2)
+
+
+def test_h3_packed_int8_safe_residual(comfy):
+    """Issue #1: real packed INT8 weights must accept H3 residuals above FP16 range."""
+    from torch import nn
+    from powershard.quant_linear import install_quant_linears, quantized_from_float, pack
+    net = nn.Sequential(nn.Linear(16, 16, bias=False, dtype=torch.float16))
+    net[0]._ps_safe, net[0]._ps_fp32 = True, False
+    tensors = {"0.weight": {"key": "0.weight", "dtype": "F16", "shape": [16, 16]}}
+    install_quant_linears(net, tensors, "int8", "dequantize", None, torch.float16, torch.device("cpu"))
+    qt = quantized_from_float(torch.eye(16, dtype=torch.float16), "int8_tensorwise")
+    layer = net[0]
+    layer.qbytes = nn.Parameter(pack(qt, layer._ps_qplan, "cpu"), requires_grad=False)
+    x = torch.full((2, 16), 131072., dtype=torch.float32)
+    out = layer(x)
+    assert out.dtype == torch.float32 and torch.isfinite(out).all()
+    torch.testing.assert_close(out, torch.nn.functional.linear(x, qt.dequantize().float()), rtol=2e-3, atol=1.)

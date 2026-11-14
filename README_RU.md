@@ -140,7 +140,7 @@ STG, Modality Guidance, DualCFGGuider, guides / keyframes / IC-LoRA, латен�
 | `PowerShard MiniMax H3: Loader` | H3 с любым форматом весов (вход `weights`), LoRA (вход `lora`: PTD, FastH3, PDD-LoRA и др.), PDD-чекпойнты, Context Windows / EasyCache, Cancel внутри шага, Veda |
 | `PowerShard MiniMax H3: Veda Sparse Attention` | разреженная attention (ниже) |
 | `PowerShard H3 Qwen Loader` | Qwen3-VL 32B text encoder H3 в пуле workers |
-| `PowerShard: H3 Sequence Loader`, `… FP16 Patcher`, `… H3 MLP chunk`, `… Qwen MLP chunk`, `PowerShard Spectrum` | исходный путь PowerShard 0.5.3 (без изменений) |
+| `PowerShard: H3 Sequence Loader`, `… FP16 Patcher`, `… H3 MLP chunk`, `… Qwen MLP chunk`, `PowerShard Spectrum` | исходный путь PowerShard 0.5.3 |
 
 Новое для H3 в этой версии (вслед за ComfyUI v0.41–0.43):
 
@@ -150,6 +150,31 @@ STG, Modality Guidance, DualCFGGuider, guides / keyframes / IC-LoRA, латен�
 * **PDD-чекпойнты** (`pdd_steps` в metadata) — стопки выходных голов; нужна ComfyUI v0.42+.
 * **Context Windows и EasyCache / LazyCache** — работают на host, как с Wan/LTX.
 * Родные `MiniMax H3 Latent Upscale With Model`, LightVAE и Sol-H3-VAE работают на host без изменений.
+
+#### H3: FP16 и диагностика загрузки
+
+H3 использует FP16 GEMM с масштабированием, FP32 residual и численно чувствительными операциями в FP32.
+`weight_dtype` не выбирает точность вычислений H3, а `compute=dequantize` **не означает** полное FP32
+вычисление. Для упакованных весов защитный путь сохраняет входы, масштабы, bias и деквантованные веса
+в FP32 до масштабирования GEMM. Это исправляет преждевременное FP16-переполнение в `QuantLinear`
+из [issue #1](https://github.com/Anvilstation/ComfyUI-PowerShard/issues/1). Разбиение H3 MLP на chunks
+также работает с упакованными весами без обращения к отсутствующему floating weight. Исправления
+покрыты небольшими CPU-проверками; качество FL2VA и скорость ещё нужно проверить на V100.
+
+Для энкодера 32B подключите **`PowerShardH3QwenLoader`** ко входу `clip` ноды conditioning и выберите
+нужные GPU в `config`. На host этот loader создаёт `QwenProxy` без весов; локальные shards грузят workers.
+Строка `MiniMaxH3TEModel... Staged` в host-логе указывает на родную загрузку ComfyUI: проверьте исполняемый
+граф и rank-логи. `PowerShardH3TextEncoder` с `native_offload` использует именно родной путь ComfyUI.
+Описанная в issue загрузка на одну GPU этими CPU-проверками не воспроизведена.
+
+H3 шардирует веса через FSDP и распределяет токены. В режиме `token` каждая GPU считает свои queries
+с собранными K/V; в `ulysses` — полную последовательность для **своей группы голов**, затем возвращается
+к локальным токенам. Полная длина последовательности на GPU не означает дублирование всех голов attention.
+Проверьте `sequence_mode_effective`, `local_token_range`, `attention_shapes`, `duplicated_compute` в отчётах
+workers. Стоимость плотной attention всё равно может расти квадратично с числом токенов.
+
+Небольшие регрессионные проверки без ComfyUI и GPU (нужен только CPU torch):
+`python tests/test_quant_linear_safe.py`.
 
 #### Veda Sparse Attention
 
@@ -330,9 +355,9 @@ python scripts/probe_veda_cuda.py --gpu 0 --grid 37x24x42 --heads 7 --predictor 
 
 ## 12. Лицензия и происхождение
 
-* Код пакета: **GPL-3.0-or-later** ([LICENSE](LICENSE)). Это изменённая версия ComfyUI-PowerShard 0.5.3: файлы
-  0.5.3 не изменены, всё новое добавлено отдельными файлами и строками в конце `__init__.py`; полный diff —
-  `review/changes_wan22.patch`.
+* Код пакета: **GPL-3.0-or-later** ([LICENSE](LICENSE)). Это изменённая версия ComfyUI-PowerShard 0.5.3.
+  Исходные дополнения версии 0.6.0 записаны в `review/changes_wan22.patch`; последующие исправления,
+  включая изменения общего кода 0.5.3, — в истории Git.
 * Сторонний код и идеи — [NOTICE](NOTICE) и `licenses/`: ComfyUI (GPL-3.0), Veda-on-ComfyUI и Miowtion (MIT),
   SageAttention (BSD-3 / Apache-2.0), Comfy Kitchen и Raylight (Apache-2.0), Spectrum (GPL-3.0), MIT-проекты
   FP16-исправлений H3.

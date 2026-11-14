@@ -195,6 +195,12 @@ class QuantLinear(nn.Module):
             dtype = x.dtype if x.is_floating_point() else self._ps_compute_dtype
         else:
             dtype = self._ps_compute_dtype
+        # H3 residuals, dequantized weights and smoothing scales can exceed the
+        # FP16 range. Keep them in FP32 until safe_linear chooses the scale;
+        # narrowing first irreversibly turns finite values into Inf.
+        safe = getattr(self, "_ps_safe", False) and dtype == torch.float16
+        if safe:
+            dtype = torch.float32
         rows = x.reshape(-1, shape[-1]).to(dtype)
         bias = None if self.bias is None else self.bias.to(dtype)
         qt, extras = unpack(self.qbytes, plan, dtype, with_extras=True)
@@ -202,7 +208,6 @@ class QuantLinear(nn.Module):
         if pre is not None:  # ModelOpt AWQ smoothing, как ComfyUI MixedPrecisionOps
             rows = rows * pre.to(rows.dtype)
         # FP16 Safe (V100): scaled half GEMM с FP32 выходом; native ядра выдают fp16 и могут переполниться.
-        safe = getattr(self, "_ps_safe", False) and dtype == torch.float16
         out = None
         if self._ps_native and not safe and not self._ps_full_precision:
             try:

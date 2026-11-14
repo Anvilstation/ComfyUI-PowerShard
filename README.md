@@ -155,7 +155,7 @@ On 6 × V100:
 | `PowerShard MiniMax H3: Loader` (PowerShardH3QuantLoader) | H3 with any weight format (via the `weights` input), LoRA (via the `lora` input: PTD, FastH3, PDD LoRAs and others), PDD checkpoints, Context Windows / EasyCache, Cancel inside a step, Veda |
 | `PowerShard MiniMax H3: Veda Sparse Attention` (PowerShardH3Veda) | sparse attention (see below) |
 | `PowerShard H3 Qwen Loader` | the Qwen3-VL 32B text encoder of H3 in a worker pool |
-| `PowerShard: H3 Sequence Loader`, `… FP16 Patcher`, `… H3 MLP chunk`, `… Qwen MLP chunk`, `PowerShard Spectrum` | the original PowerShard 0.5.3 path, unchanged |
+| `PowerShard: H3 Sequence Loader`, `… FP16 Patcher`, `… H3 MLP chunk`, `… Qwen MLP chunk`, `PowerShard Spectrum` | the original PowerShard 0.5.3 path |
 
 New for H3 in this version, following ComfyUI v0.41–0.43:
 
@@ -165,6 +165,28 @@ New for H3 in this version, following ComfyUI v0.41–0.43:
 * **PDD checkpoints** (`pdd_steps` in the metadata), which stack output heads. Needs ComfyUI v0.42+.
 * **Context Windows and EasyCache / LazyCache** run on the host, as with Wan/LTX.
 * The native `MiniMax H3 Latent Upscale With Model`, LightVAE and Sol-H3-VAE work on the host unchanged.
+
+#### H3 FP16 and loading diagnostics
+
+H3 uses scaled FP16 GEMMs with FP32 residuals and numerical islands. `weight_dtype` does not select
+an H3 compute dtype, and `compute=dequantize` does **not** mean full FP32 inference. With packed weights,
+the safe path keeps inputs, smoothing scales, bias and dequantized weights in FP32 until GEMM scaling.
+This fixes premature FP16 overflow in `QuantLinear` reported in [issue #1](https://github.com/Anvilstation/ComfyUI-PowerShard/issues/1).
+Chunked H3 MLPs also support packed weights without attempting to cache a nonexistent floating weight.
+The fixes have small CPU regression coverage; FL2VA output quality and speed still need V100 validation.
+
+For the 32B text encoder, connect **`PowerShardH3QwenLoader`** directly to the conditioning node's `clip`
+input, with the intended GPU IDs in `config`. This loader constructs a weightless `QwenProxy` on the host
+and loads local shards in workers. A host `MiniMaxH3TEModel... Staged` log points to a native ComfyUI
+encoder load; inspect the executed graph and rank logs before attributing it to this distributed loader.
+`PowerShardH3TextEncoder` with `native_offload` uses the native ComfyUI path. The reported single-GPU
+load has not been reproduced by the CPU regressions.
+
+H3 uses FSDP weight sharding and token sequence parallelism. In `token` mode each GPU computes local
+queries with gathered K/V; in `ulysses` mode each GPU attends over the full sequence for **its own head
+group**, then returns to local tokens. Full sequence length on a rank does not mean all attention heads
+are duplicated. Inspect `sequence_mode_effective`, `local_token_range`, `attention_shapes` and
+`duplicated_compute` in worker reports. Dense attention can still scale quadratically with token count.
 
 #### Veda Sparse Attention
 
@@ -354,6 +376,8 @@ Rank logs are in `<ComfyUI>/output/powershard/`: `*-rankN.log`, `*-progress.json
 Run these from the custom node folder with your ComfyUI's Python:
 
 ```bash
+# small H3 packed-weight regressions: CPU torch only, no ComfyUI or GPU
+python tests/test_quant_linear_safe.py
 # no GPU: nodes, workflows, formats, LoRA, worker lifecycle, Veda settings
 python -m pytest tests/test_wan_config.py tests/test_ltx_config.py tests/test_lifecycle_wan.py \
                  tests/test_veda_config.py tests/test_image_config.py tests/test_example_workflows.py
@@ -388,8 +412,8 @@ python scripts/probe_veda_cuda.py --gpu 0 --grid 37x24x42 --heads 7 --predictor 
 ## 12. License and provenance
 
 * **Package code:** **GPL-3.0-or-later** ([LICENSE](LICENSE)). This is a modified version of
-  ComfyUI-PowerShard 0.5.3. The 0.5.3 files are unchanged; everything new is in separate files and in lines
-  appended to `__init__.py`. The full diff is `review/changes_wan22.patch`.
+  ComfyUI-PowerShard 0.5.3. The original 0.6.0 additions are recorded in `review/changes_wan22.patch`;
+  subsequent fixes, including changes to shared 0.5.3 code, are recorded in Git history.
 * **Third-party code and ideas:** listed in [NOTICE](NOTICE) and `licenses/`:
   * ComfyUI (GPL-3.0);
   * Veda-on-ComfyUI and Miowtion (MIT);
