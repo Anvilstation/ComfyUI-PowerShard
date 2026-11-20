@@ -30,7 +30,7 @@ only its own part, so 14–22B models and long videos fit into 6 × 16 GB.
 | **Wan** | 2.2 A14B T2V / I2V (MoE high+low), TI2V-5B, S2V, Animate, WanDancer; 2.1 T2V / I2V / FLF, VACE, HuMo, SCAIL, Animate2, InfiniteTalk / MultiTalk, Fun Camera / Control, Uni3C |
 | **LTX** | LTX-2 / 2.3 / 2.5 video+audio (LTXAV) and video-only (LTX-Video) |
 | **MiniMax H3** | T2VA / FL2VA / R2VA; quantized weights; **Veda Sparse Attention** |
-| **Image** | any model your ComfyUI loads: SDXL / SD 1.5, Flux.1 / Kontext / Krea, Flux.2, Chroma, Z-Image, Lumina 2, Qwen-Image (Edit), MOSS-Image, HiDream, SD3.5, Fibo 2 and more. Sequence parallel for Flux / Flux.2 / Chroma, Qwen-Image, Z-Image / Lumina 2 and MOSS-Image |
+| **Image** | any model your ComfyUI loads: SDXL / SD 1.5, Flux.1 / Kontext / Krea, Flux.2, Chroma, Z-Image, Lumina 2, Qwen-Image (Edit), MOSS-Image, MiniMax H3-Image, HiDream, SD3.5, Fibo 2 and more. Sequence parallel for Flux / Flux.2 / Chroma, Qwen-Image, Z-Image / Lumina 2 and MOSS-Image |
 | **Text encoders** | umT5-XXL (Wan), Gemma (LTX), Qwen3-VL 32B (H3), T5 / CLIP (Flux), Qwen2.5-VL (Qwen-Image), Qwen3-4B (Z-Image), Qwen3.5-9B (MOSS), Mistral (Flux.2), also sharded across the GPUs |
 | **Accelerators** | Block Cache (TeaCache/FBCache), NAG, RIFLEx. EasyCache/LazyCache, Context Windows and STG also work |
 

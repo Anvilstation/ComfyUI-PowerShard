@@ -29,7 +29,7 @@ PowerShard считает одну большую видео- или image-мо�
 | **Wan** | 2.2 A14B T2V / I2V (MoE high+low), TI2V-5B, S2V, Animate, WanDancer; 2.1 T2V / I2V / FLF, VACE, HuMo, SCAIL, Animate2, InfiniteTalk / MultiTalk, Fun Camera / Control, Uni3C |
 | **LTX** | LTX-2 / 2.3 / 2.5 видео+звук (LTXAV) и только видео (LTX-Video) |
 | **MiniMax H3** | T2VA / FL2VA / R2VA; квантованные веса; **Veda Sparse Attention** |
-| **Image** | любая модель, которую загружает ваша ComfyUI: SDXL / SD 1.5, Flux.1 / Kontext / Krea, Flux.2, Chroma, Z-Image, Lumina 2, Qwen-Image (Edit), MOSS-Image, HiDream, SD3.5, Fibo 2 и др. Sequence parallel — Flux / Flux.2 / Chroma, Qwen-Image, Z-Image / Lumina 2, MOSS-Image |
+| **Image** | любая модель, которую загружает ваша ComfyUI: SDXL / SD 1.5, Flux.1 / Kontext / Krea, Flux.2, Chroma, Z-Image, Lumina 2, Qwen-Image (Edit), MOSS-Image, MiniMax H3-Image, HiDream, SD3.5, Fibo 2 и др. Sequence parallel — Flux / Flux.2 / Chroma, Qwen-Image, Z-Image / Lumina 2, MOSS-Image |
 | **Текстовые энкодеры** | umT5-XXL (Wan), Gemma (LTX), Qwen3-VL 32B (H3), T5 / CLIP (Flux), Qwen2.5-VL (Qwen-Image), Qwen3-4B (Z-Image), Qwen3.5-9B (MOSS), Mistral (Flux.2) — тоже по GPU |
 | **Ускорители** | Block Cache (TeaCache/FBCache), NAG, RIFLEx; совместимы EasyCache/LazyCache, Context Windows, STG |
 
