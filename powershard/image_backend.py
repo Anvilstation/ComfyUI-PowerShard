@@ -88,10 +88,35 @@ def build_native(path, storage, compute, device="meta"):
     return model, model_config, sd, identities, header, prefix
 
 
+def promote_file_buffers_to_meta(network, keys, identities):
+    """Move buffers that the checkpoint carries onto meta.
+
+    H3 image-family buffers (adaln_t_table, rope.inv_freq) are registered
+    without device= and the image path builds the model on CPU, so they are
+    live CPU memory. load_model_weights then copies meta->CPU and raises
+    "Cannot copy out of meta tensor". Putting the ones the checkpoint actually
+    carries on meta lets the hook map them to their file keys.
+    """
+    for full, buf in list(network.named_buffers()):
+        if buf is None or buf.device.type == "meta":
+            continue
+        parent, _, leaf = full.rpartition(".")
+        holder = network.get_submodule(parent) if parent else network
+        if full in keys:
+            key = full
+        elif "diffusion_model." + full in keys:
+            key = "diffusion_model." + full
+        else:
+            continue
+        holder._buffers[leaf] = torch.empty_like(buf, device="meta")
+        identities[id(holder._buffers[leaf])] = key
+
+
 def map_parameters(model, sd, identities):
     """Прогон родного BaseModel.load_model_weights на meta: имя параметра diffusion_model -> ключ файла."""
     seen = {}
     network = model.diffusion_model
+    promote_file_buffers_to_meta(network, set(sd), identities)
     handles = []
     for name, module in network.named_modules():
         def hook(module_, state_dict, prefix, local_metadata, strict, missing, unexpected, errors, _name=name):
