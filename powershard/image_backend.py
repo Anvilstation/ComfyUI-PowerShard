@@ -111,6 +111,24 @@ def map_parameters(model, sd, identities):
     return seen
 
 
+def install_h3_image_sequence(network, config, families):
+    """Install sequence parallel wrappers for MiniMax H3-Image.
+
+    H3-Image is not part of the ``image_parallel`` family table: it is the image
+    branch of the AV MiniMax H3 transformer, so it reuses the H3 attention and
+    sequence wrappers instead of the per-family block override.  Without them
+    ``sequence_mode=ulysses`` only shards the weights and every rank still runs
+    attention over the full token sequence.
+    """
+    if families or type(network).__name__ != "MiniMaxH3ImageModel":
+        return families
+    from .attention import install_attention, install_sequence
+
+    install_attention(network, config)
+    install_sequence(network, config)
+    return ["minimax_h3_image"]
+
+
 def image_units(network):
     """Элементы ModuleList (блоки DiT, input/output blocks UNet) — FSDP units; цепочка prefetch — самый длинный."""
     units, chain, taken = [], [], []
@@ -292,7 +310,8 @@ class ImageBackend:
         root.eval().requires_grad_(False)
         self.world, self.rank = dist.get_world_size(), dist.get_rank()
         self.parallel_ctx = ParallelContext(self.world, self.rank)
-        self.sequence_families = install(network, self.parallel_ctx)
+        self.sequence_families = install_h3_image_sequence(
+            network, self.config, install(network, self.parallel_ctx))
         units, chain = image_units(network)
         install_block_hooks(chain or units)
         from .quant_linear import install_quant_linears
